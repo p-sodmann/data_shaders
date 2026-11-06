@@ -120,8 +120,11 @@ src/station/    station = profile (thresholds, SLO, topology, endpoints, regions
 src/data/       simulator + polling sources → telemetry store (tape rows, state, events)
 src/gl/         engine: one WebGL2 context renders every screen
 src/instruments each instrument = fragment shader + update() that returns uniforms
+                registry.js: every panel type; overlays/: labels printed on the glass
+src/config/     presets.js: the built-in pages (DEFAULT_PAGES)
+src/ui/         PageView (lays a page's panels out on the 12 × 8 grid), Module, Screen
 src/config.js   device constants (tape geometry, history lengths) and URL parameters
-src/App.jsx     the housing (layout, labels, keys)
+src/App.jsx     the housing (header, keys, page switching)
 ```
 
 Nothing station-specific is a module global. `createStation(def)` builds one monitored
@@ -140,7 +143,17 @@ Every screen runs the same pipeline: **instrument scene → phosphor persistence
 convergence error, vignette, grain, flicker). Screens power on with a raster
 cascade when a page is switched in.
 
-Adding an instrument means writing one object:
+Pages are data. A page is `{ id, name, panels: [{ id, type, station, x, y, w, h, options }] }`,
+placed on a grid of 12 columns × 8 rows that fills the deck. `PageView` builds each panel's
+instrument when the page mounts and drops it when the page goes away. The engine frees the
+screen's GPU objects then, and `window.__MARS__.stats()` shows the live counts (screens,
+textures, framebuffers, programs, buffers). A panel whose type isn't in the registry shows
+`NO MODULE`. A panel whose station doesn't exist shows `NO SIGNAL`. Module numbers run on in
+panel order across all pages.
+
+### Adding an instrument
+
+Write the instrument as one object:
 
 ```js
 export const createMyInstrument = (station, options = {}) => ({
@@ -162,6 +175,24 @@ export const sweep = {
 };
 ```
 
-Then mount it with `<Screen inst={createMyInstrument(station)} />` (built once, as in `App.jsx`). The shared header gives
+Then register it in [src/instruments/registry.js](src/instruments/registry.js):
+
+```js
+mine: entry({
+  name: 'My instrument',        // module header; may be (options) => text
+  meta: 'Saturation · live',     // right-hand caption; may be ({ station, snap, options }) => text
+  create: createMyInstrument,    // (station, options) => instrument
+  overlay: null,                 // optional React component inside the glass: { inst, station, snap, options }
+  needs: [],                     // station tables it reads: 'endpoints', 'stages', 'regions', 'almanac'
+  minW: 3, minH: 2, defaultSize: [4, 3],
+  options: {},                   // { key: { type, default, label } }, defaults are filled in before create()
+}),
+```
+
+and put a panel `{ id, type: 'mine', station: 'main', x, y, w, h }` on a page in
+[src/config/presets.js](src/config/presets.js). Don't mount instruments in `App.jsx`; only
+the housing's status and clock tubes live there. If an instrument allocates GPU objects in
+`init(gl, engine)`, release them in `dispose(gl, state)`. The engine calls it when the panel
+unmounts. The shared header gives
 every shader the phosphor palette, `uRes`, `uTime`, `uDpr` and SDF helpers.
 For text, use `createDotMatrix` with a `draw(api)` callback.

@@ -27,6 +27,26 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
   if (!gl) throw new Error('This display needs WebGL2.');
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 
+  // Live GPU objects, for the debug counter (stats()). Counted at the context
+  // so that resources made by instruments and the vector painter are included.
+  const live = { textures: 0, framebuffers: 0, programs: 0, buffers: 0 };
+  const alive = new WeakSet(); // so a double delete isn't counted twice
+  for (const [kind, name] of [['textures', 'Texture'], ['framebuffers', 'Framebuffer'], ['programs', 'Program'], ['buffers', 'Buffer']]) {
+    const create = gl[`create${name}`].bind(gl), remove = gl[`delete${name}`].bind(gl);
+    gl[`create${name}`] = () => {
+      const o = create();
+      if (o) {
+        alive.add(o);
+        live[kind]++;
+      }
+      return o;
+    };
+    gl[`delete${name}`] = (o) => {
+      if (o && alive.delete(o)) live[kind]--;
+      remove(o);
+    };
+  }
+
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   const buf = gl.createBuffer();
@@ -267,6 +287,8 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
         inst.dispose?.(gl, s.state);
       };
     },
+    // debug counter: a page switch that leaks shows up as growing numbers here
+    stats: () => ({ screens: screens.size, ...live }),
     destroy() {
       cancelAnimationFrame(raf);
       canvas.removeEventListener('webglcontextlost', onLost);

@@ -48,6 +48,14 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 - **Aspect ratio.** One layout per device, or responsive variants per screen size?
 - **Config persistence across displays.** localStorage is per browser. Should Caddy accept a
   `PUT /config/mars.json` so several displays share one config?
+- **Bank divider rule (step 05):** the old layout drew an engraved rule between the deck and the
+  bank below it. Pages are now one 12 × 8 grid, so the rule is gone. Should a page be able to
+  carry dividers (for example `dividers: [{ y: 6 }]`, drawn in a grid gap), or is the plain gap
+  right? Step 08's editor would need to place them.
+- **Portrait and narrow screens overflow sideways (step 05, existed before):** below a 5:4
+  aspect ratio, the footer keys and the header tubes make the device wider than the viewport
+  (1156 px at 1080 × 1600, the same before and after step 05). The single-column deck fits.
+  The footer keys would need to wrap or shrink.
 
 ## Tooling
 

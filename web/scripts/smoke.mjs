@@ -1,6 +1,7 @@
 // Headless smoke test: build, serve the build with `vite preview`, open every page in Chromium
-// and fail on console errors, page errors or missing module headers. Screenshots go to
-// snapshots/ so a person can compare them; nothing here diffs pixels.
+// and fail on console errors, page errors or missing module headers. Then switch pages 50 times
+// and fail if the engine's GPU object count grew. Screenshots go to snapshots/ so a person can
+// compare them; nothing here diffs pixels.
 //
 //   npm run smoke            (SMOKE_SKIP_BUILD=1 reuses an existing dist/)
 
@@ -15,6 +16,7 @@ const SNAPSHOTS = join(ROOT, 'snapshots');
 const PORT = 4179;
 const BASE = `http://127.0.0.1:${PORT}/`;
 const SETTLE_MS = 4000;
+const SWITCHES = 50;
 
 // Module numbers per page, as listed in the README tables. Only the active page is mounted,
 // so each page is checked for its own headers; together the five pages cover 01–27.
@@ -74,6 +76,36 @@ async function checkPage(browser, n, expected) {
   return errors;
 }
 
+// Mounting a page builds its instruments and allocates their GPU objects; leaving it must free
+// them all. Starts and ends on page 1 (50 is a multiple of 5 pages), so the counts must match.
+async function checkSwitching(browser) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(`console.error: ${m.text()}`));
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  const stats = () => page.evaluate(() => window.__MARS__?.stats());
+
+  await page.goto(`${BASE}?page=1`, { waitUntil: 'load' });
+  await page.waitForTimeout(SETTLE_MS);
+  const before = await stats();
+  if (!before) return { errors: ['window.__MARS__.stats() is missing'] };
+  let peak = before.textures;
+  for (let i = 0; i < SWITCHES; i++) {
+    await page.keyboard.press('ArrowRight');
+    // long enough for every screen to render a frame and allocate its targets
+    await page.waitForTimeout(150);
+    peak = Math.max(peak, (await stats()).textures);
+  }
+  await page.waitForTimeout(1000);
+  const after = await stats();
+  await context.close();
+  for (const k of Object.keys(before)) {
+    if (after[k] !== before[k]) errors.push(`${k}: ${before[k]} before, ${after[k]} after ${SWITCHES} switches`);
+  }
+  return { errors, before, after, peak };
+}
+
 async function main() {
   build();
   mkdirSync(SNAPSHOTS, { recursive: true });
@@ -94,12 +126,21 @@ async function main() {
         console.log(`✓ page ${n}  modules ${expected[0]}–${expected.at(-1)}  → snapshots/page-${n}.png`);
       }
     }
+    const sw = await checkSwitching(browser);
+    const fmt = (s) => (s ? Object.entries(s).map(([k, v]) => `${k} ${v}`).join(', ') : '-');
+    if (sw.errors.length) {
+      failed++;
+      console.log(`✗ ${SWITCHES} page switches`);
+      for (const e of sw.errors) console.log(`    ${e}`);
+    } else {
+      console.log(`✓ ${SWITCHES} page switches  GPU objects unchanged (${fmt(sw.after)}; peak textures ${sw.peak})`);
+    }
   } finally {
     await browser.close();
     preview.kill();
   }
   if (failed) {
-    console.log(`smoke: ${failed} of ${Object.keys(PAGES).length} pages failed`);
+    console.log(`smoke: ${failed} of ${Object.keys(PAGES).length + 1} checks failed`);
     process.exit(1);
   }
   console.log('smoke: ok');

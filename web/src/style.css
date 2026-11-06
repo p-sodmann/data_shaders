@@ -59,7 +59,7 @@ body.idle, body.idle * { cursor: none !important; }
   border-radius: 1.8vmin;
   padding: 2.2vmin 2.6vmin 1.5vmin;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(0, 22vh) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 1.8vmin;
   background: linear-gradient(180deg, var(--body-hi), var(--body) 5%, var(--body) 95%, var(--body-lo));
   box-shadow:
@@ -258,35 +258,25 @@ body.idle, body.idle * { cursor: none !important; }
 .ov.corner { top: 3%; left: 2%; color: rgba(150, 255, 195, 0.32); }
 
 /* ---------- layout ---------- */
+/* Pages are data: every panel sits on a 12 x 8 grid at its x/y/w/h, which
+   PageView passes in as --gc / --gr (ADR-0005). */
 .deck {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
-  gap: 2.4vmin;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  gap: 1.8vmin 2.4vmin;
   min-height: 0;
 }
-.side {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.8vmin;
-  min-height: 0;
-}
-.bank {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 2.3fr);
-  gap: 2.4vmin;
-  min-height: 0;
-  padding-top: 1.8vmin;
-  border-top: 1px solid var(--rule);
-}
+.panel { grid-column: var(--gc); grid-row: var(--gr); }
 
-.deck.p2 { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
-.bank.p2 { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) minmax(0, 1fr); }
-.deck.p3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); }
-.bank.p3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.deck.p4 { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
-.bank.p4 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.deck.p5 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.75fr); }
-.bank.p5 { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr) minmax(0, 1.3fr); }
+/* an empty bay: no tube fitted, or no station feeding it */
+.bezel.empty { display: grid; place-items: center; }
+.engraved {
+  font-size: calc(var(--u) * 0.82);
+  letter-spacing: 0.3em;
+  color: var(--ink-faint);
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.07);
+}
 .ov-anchor { position: absolute; inset: 0; pointer-events: none; }
 .ov.dial { transform: translate(-50%, -50%); color: rgba(150, 255, 195, 0.6); }
 .ov.dial.minor { color: rgba(150, 255, 195, 0.3); }
@@ -295,7 +285,6 @@ body.idle, body.idle * { cursor: none !important; }
 .ov.heat { transform: translateY(-50%); color: rgba(150, 255, 195, 0.5); }
 .ov.heat.hr { transform: translate(-50%, -50%); }
 .ov.heat.cap { color: rgba(150, 255, 195, 0.35); font-size: clamp(7px, 0.8vmin, 10px); }
-.stack { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.3fr); gap: 1.8vmin; min-height: 0; }
 .ov.wfh { transform: translateY(50%); color: rgba(150, 255, 195, 0.45); }
 
 /* ---------- footer ---------- */
@@ -390,21 +379,9 @@ body.idle, body.idle * { cursor: none !important; }
 
 /* ---------- other monitor shapes ---------- */
 @media (max-aspect-ratio: 5/4) {
-  .device { grid-template-rows: auto minmax(0, 1fr) auto auto; }
-  .deck { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr); }
-  .side { grid-template-columns: 1fr 1fr; grid-template-rows: none; }
-  .bank { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(13vh, auto); }
-  .m-log { grid-column: 1 / -1; }
-  .deck.p2 { grid-template-columns: 1fr; }
-  .bank.p2 { grid-template-columns: 1fr 1fr; }
-  .bank.p2 > .mod:first-child { grid-column: 1 / -1; }
-  .deck.p3 { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-  .bank.p3 { grid-template-columns: 1fr 1fr; }
-  .deck.p4 { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr); }
-  .bank.p4 { grid-template-columns: 1fr 1fr; }
-  .deck.p5 { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-  .bank.p5 { grid-template-columns: 1fr 1fr; }
-  .bank.p5 > .mod:last-child { grid-column: 1 / -1; }
+  /* one column in panel order; each panel keeps its height share */
+  .deck { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: minmax(0, 1fr); }
+  .panel { grid-column: 1; grid-row: span var(--h); }
   .brand-sub, .plate, .serial { display: none; }
 }
 @media (max-height: 640px) {
