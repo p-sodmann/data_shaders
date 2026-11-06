@@ -1,4 +1,3 @@
-import { SLO, BURN_ALERTS } from '../config.js';
 import { PH } from '../gl/palette.js';
 
 // 25 BUDGET: the error budget as a fuel tank. Full is the whole budget for the
@@ -7,7 +6,9 @@ import { PH } from '../gl/palette.js';
 // rise while the budget is burning faster than it refills, and the readout
 // projects when the tank runs dry at the 6-hour burn rate.
 
-export function createBudget(almanac) {
+export function createBudget(station, options = {}) {
+  const { almanac } = station;
+  const { slo } = station.profile;
   const bubbles = [];
   return {
     crt: { curve: 0.035, scan: 0.8, bloom: 1.05, decay: 0.85 },
@@ -67,10 +68,10 @@ export function createBudget(almanac) {
       const x0 = tx + tw + 22;
       const pct = (n) => `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}%`;
       const days = a.daysLeft;
-      const proj = rem <= 0 ? 'EXHAUSTED' : days === Infinity || days > SLO.days ? 'HOLDS AT THIS RATE' : `EMPTY IN ${days < 2 ? `${Math.round(days * 24)}H` : `${days.toFixed(0)}D`}`;
-      const projC = rem <= 0 || days < 3 ? PH.crit : days <= SLO.days ? PH.warn : PH.ok;
+      const proj = rem <= 0 ? 'EXHAUSTED' : days === Infinity || days > slo.days ? 'HOLDS AT THIS RATE' : `EMPTY IN ${days < 2 ? `${Math.round(days * 24)}H` : `${days.toFixed(0)}D`}`;
+      const projC = rem <= 0 || days < 3 ? PH.crit : days <= slo.days ? PH.warn : PH.ok;
       const lines = [
-        [`SLO ${(SLO.target * 100).toFixed(1)}% · ${SLO.days}D`, PH.ok, 0.5],
+        [`SLO ${(slo.target * 100).toFixed(1)}% · ${slo.days}D`, PH.ok, 0.5],
         [`LEFT ${pct(rem)}`, c, 1, 2.2],
         [`USED ${pct(Math.max(0, a.consumed))}`, PH.ok, 0.6],
         [`BURN 6H ${a.burn6h === a.burn6h ? a.burn6h.toFixed(2) : '--'}X`, a.burn6h > 1 ? PH.warn : PH.ok, 0.7],
@@ -81,7 +82,7 @@ export function createBudget(almanac) {
         v.text(x0, y, s, col, inten, pitch);
         y += pitch * 11 + 4;
       }
-      if (a.coverage < 0.98) v.text(x0, B - 12, `HISTORY ${Math.round(a.coverage * SLO.days)}D OF ${SLO.days}`, PH.ok, 0.35, 1.25);
+      if (a.coverage < 0.98) v.text(x0, B - 12, `HISTORY ${Math.round(a.coverage * slo.days)}D OF ${slo.days}`, PH.ok, 0.35, 1.25);
     },
   };
 }
@@ -94,7 +95,9 @@ export function createBudget(almanac) {
 
 const YLO = 0.1, YHI = 100;
 
-export function createBurnRate(store, almanac) {
+export function createBurnRate(station, options = {}) {
+  const { store, almanac } = station;
+  const { burnAlerts } = station.profile;
   return {
     crt: { curve: 0.025, scan: 0.8, bloom: 1.0, decay: 0.84 },
     render(gl, _state, f, v) {
@@ -122,7 +125,7 @@ export function createBurnRate(store, almanac) {
       }
 
       // alert thresholds
-      for (const al of BURN_ALERTS) {
+      for (const al of burnAlerts) {
         const yy = y(al.rate);
         const c = al.rate > 10 ? PH.crit : PH.warn;
         for (let xx = L; xx < R; xx += 8) v.line(xx, yy, xx + 4, yy, c, 0.3, 0.45);

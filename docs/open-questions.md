@@ -5,6 +5,10 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 ## Data and Prometheus
 
+- **JSON polling source in the config document.** `?source=<url>` still works, and since step 04
+  it becomes a station with `source: { kind: 'poll', url, hosts }`. ADR-0005 only lists `sim`
+  and `prometheus` source kinds. Should the zod schema (step 06) accept `poll`, or should the
+  polling source be retired once Prometheus works (step 07)?
 - **One Prometheus for all servers?** The plan assumes MARS reads from a single
   Prometheus-compatible URL. Several backends would need a `prometheus` field per station.
 - **Scrape interval 1 s or 5 s?** 1 s keeps the Signal page (spectrum, rhythms) meaningful for

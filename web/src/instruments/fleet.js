@@ -1,4 +1,3 @@
-import { THRESH } from '../config.js';
 import { PH, sevOf } from '../gl/palette.js';
 
 // 09 FLEET: every node's latency over the last three minutes as one faint
@@ -9,7 +8,9 @@ import { PH, sevOf } from '../gl/palette.js';
 const SPAN = 180;
 const MAX = 45;
 
-export function createFleet(store) {
+export function createFleet(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   return {
     crt: { curve: 0.025, scan: 0.8, bloom: 1.0, decay: 0.84 },
     render(gl, _state, f, v) {
@@ -26,7 +27,7 @@ export function createFleet(store) {
         const yy = y(ms);
         v.line(L - (ms % 25 === 0 ? 9 : 5), yy, L - 2, yy, PH.ok, 0.3, 0.45);
       }
-      for (let xx = L; xx < R; xx += 6) v.dot(xx, y(THRESH.warn), PH.warn, 0.22, 0.5);
+      for (let xx = L; xx < R; xx += 6) v.dot(xx, y(thresh.warn), PH.warn, 0.22, 0.5);
       v.line(L, B, R, B, PH.ok, 0.18, 0.5);
       for (let s = 0; s <= SPAN; s += 30) v.line(x(Math.min(s, SPAN - 1)), B, x(Math.min(s, SPAN - 1)), B + 4, PH.ok, 0.3, 0.45);
 
@@ -41,11 +42,11 @@ export function createFleet(store) {
             continue;
           }
           const p = [x(s), y(val), val];
-          if (prev) v.line(prev[0], prev[1], p[0], p[1], sevOf(val, THRESH.warn, THRESH.crit), val > THRESH.warn ? 0.4 : 0.15, 0.5);
+          if (prev) v.line(prev[0], prev[1], p[0], p[1], sevOf(val, thresh.warn, thresh.crit), val > thresh.warn ? 0.4 : 0.15, 0.5);
           prev = p;
         }
         if (prev) {
-          v.dot(prev[0], prev[1], sevOf(prev[2], THRESH.warn, THRESH.crit), 0.8, 0.9);
+          v.dot(prev[0], prev[1], sevOf(prev[2], thresh.warn, thresh.crit), 0.8, 0.9);
           cur.push(prev[2]);
         }
       }
@@ -59,7 +60,7 @@ export function createFleet(store) {
           continue;
         }
         const p = [x(s), y(val)];
-        if (prev) v.line(prev[0], prev[1], p[0], p[1], mixWhite(sevOf(val, THRESH.warn, THRESH.crit)), 0.55, 0.55);
+        if (prev) v.line(prev[0], prev[1], p[0], p[1], mixWhite(sevOf(val, thresh.warn, thresh.crit)), 0.55, 0.55);
         prev = p;
       }
       if (prev) v.dot(prev[0] + head * 0.5, prev[1], PH.ok, 1.4, 1.4);
@@ -73,16 +74,16 @@ export function createFleet(store) {
       counts.forEach((c, b) => {
         const xx = hx + (b + 0.5) * (hw / bins);
         const ms = ((b + 0.5) / bins) * MAX;
-        v.line(xx, B, xx, B - 4 - (c / peak) * (B - T) * 0.45, sevOf(ms, THRESH.warn, THRESH.crit), c ? 0.7 : 0.15, 0.55);
+        v.line(xx, B, xx, B - 4 - (c / peak) * (B - T) * 0.45, sevOf(ms, thresh.warn, thresh.crit), c ? 0.7 : 0.15, 0.55);
       });
       v.line(hx, B, W - 14, B, PH.ok, 0.2, 0.45);
 
       const q = (p) => (cur.length ? cur[Math.min(cur.length - 1, Math.floor(p * cur.length))] : 0);
       const p50 = q(0.5), p99 = q(0.99);
       v.text(hx, T - 4, 'P50', PH.ok, 0.45, 1.6);
-      v.text(hx + 36, T - 4, p50.toFixed(1), sevOf(p50, THRESH.warn, THRESH.crit), 0.9, 1.6);
+      v.text(hx + 36, T - 4, p50.toFixed(1), sevOf(p50, thresh.warn, thresh.crit), 0.9, 1.6);
       v.text(hx, T + 16, 'P99', PH.ok, 0.45, 1.6);
-      v.text(hx + 36, T + 16, p99.toFixed(1), sevOf(p99, THRESH.warn, THRESH.crit), 0.9, 1.6);
+      v.text(hx + 36, T + 16, p99.toFixed(1), sevOf(p99, thresh.warn, thresh.crit), 0.9, 1.6);
       v.text(hx, T + 36, 'SPREAD', PH.ok, 0.45, 1.6);
       v.text(hx + 62, T + 36, (q(1) - q(0)).toFixed(1), PH.ok, 0.75, 1.6);
 

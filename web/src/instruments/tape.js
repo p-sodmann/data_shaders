@@ -1,4 +1,4 @@
-import { ROWS, ROW_SECONDS, THRESH } from '../config.js';
+import { ROWS, ROW_SECONDS } from '../config.js';
 
 // 01 TAPE ARCHIVE
 // The front row is the current 10-minute window, written left to right by the
@@ -10,7 +10,8 @@ import { ROWS, ROW_SECONDS, THRESH } from '../config.js';
 
 export const TAPE = { P: 0.06, YH: 1.3, Y0: 0.14, XL: 0.085, XR: 0.975, HS: 0.3 };
 export const ROLL_MS = 1600;
-export const tapeHeight = (ms) => Math.pow(Math.min(Math.max(ms / THRESH.max, 0), 1.2), 0.85) * TAPE.HS;
+// `max` is the station's full scale (profile.thresh.max)
+export const tapeHeight = (ms, max) => Math.pow(Math.min(Math.max(ms / max, 0), 1.2), 0.85) * TAPE.HS;
 export function rowGeom(z) {
   const s = 1 / (1 + z * TAPE.P);
   const base = TAPE.YH - (TAPE.YH - TAPE.Y0) * s;
@@ -129,7 +130,9 @@ void main(){
 }
 `;
 
-export function createTape(store) {
+export function createTape(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   let tex = null;
   let seen = -1;
   const data = new Float32Array(ROW_SECONDS * ROWS * 2);
@@ -153,9 +156,9 @@ export function createTape(store) {
         uHead: head,
         uLast: Math.max(0, store.lastIdx) / ROW_SECONDS,
         uShift: easeOut(p),
-        uWarn: THRESH.warn,
-        uCrit: THRESH.crit,
-        uMax: THRESH.max,
+        uWarn: thresh.warn,
+        uCrit: thresh.crit,
+        uMax: thresh.max,
       };
     },
     dispose() {

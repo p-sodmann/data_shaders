@@ -1,4 +1,3 @@
-import { THRESH } from '../config.js';
 import { PH, STATE_COLORS } from '../gl/palette.js';
 import { camera, hash } from './space.js';
 
@@ -19,7 +18,9 @@ const SLICES = [
 const STATE_INDEX = { NOMINAL: 0, DEGRADED: 1, INCIDENT: 2 };
 const TAU = Math.PI * 2;
 
-export function createSlices(store) {
+export function createSlices(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   return {
     crt: { curve: 0.03, scan: 0.8, bloom: 1.05, decay: 0.82 },
     render(gl, _state, f, v) {
@@ -63,7 +64,7 @@ export function createSlices(store) {
             const rr = r * (0.35 + 0.75 * h1);
             const aa = a + (h2 - 0.5) * 0.9 + t * (0.05 + 0.1 * (1 - h1));
             const p = P(Math.cos(aa) * rr * 0.82, Math.sin(aa) * rr * 0.78);
-            v.dot(p[0], p[1], ms > THRESH.warn ? PH.warn : c, (0.12 + 0.25 * load) * fade, 0.55);
+            v.dot(p[0], p[1], ms > thresh.warn ? PH.warn : c, (0.12 + 0.25 * load) * fade, 0.55);
           }
         }
         v.poly(pts, c, 0.5 * fade, 0.5, true);

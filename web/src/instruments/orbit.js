@@ -1,4 +1,3 @@
-import { SERVICES, LINKS, HUB, THRESH } from '../config.js';
 import { PH, STATE_COLORS } from '../gl/palette.js';
 import { camera, rotate, SOLIDS, hash } from './space.js';
 
@@ -11,19 +10,21 @@ import { camera, rotate, SOLIDS, hash } from './space.js';
 const TAU = Math.PI * 2;
 const SHAPES = ['octa', 'cube', 'tetra'];
 
-const positions = SERVICES.map((_, i) => {
-  if (i === HUB) return [0, 0, 0];
-  const k = i < HUB ? i : i - 1;
-  const a = (TAU * k) / (SERVICES.length - 1) + 0.35;
-  return [Math.cos(a) * 1.65, Math.sin(k * 2.1) * 0.32, Math.sin(a) * 1.65];
-});
-
 const stars = Array.from({ length: 160 }, (_, i) => {
   const r = 1.2 + hash(i) * 1.6, a = hash(i + 500) * TAU, y = (hash(i + 900) - 0.5) * 1.6;
   return [Math.cos(a) * r, y, Math.sin(a) * r, hash(i + 1300)];
 });
 
-export function createOrbit(store) {
+export function createOrbit(station, options = {}) {
+  const { store } = station;
+  const { thresh, services, hub, links } = station.profile;
+  // the hub sits in the middle, the other services on a ring around it
+  const positions = services.map((_, i) => {
+    if (i === hub) return [0, 0, 0];
+    const k = i < hub ? i : i - 1;
+    const a = (TAU * k) / (services.length - 1) + 0.35;
+    return [Math.cos(a) * 1.65, Math.sin(k * 2.1) * 0.32, Math.sin(a) * 1.65];
+  });
   return {
     crt: { curve: 0.03, scan: 0.75, bloom: 1.05, decay: 0.8 },
     render(gl, _state, f, v) {
@@ -67,9 +68,9 @@ export function createOrbit(store) {
       const proj = positions.map((p) => cam(...p));
 
       // links and packets
-      const traffic = Math.min(1, (store.latest?.throughput ?? 0) / THRESH.tpMax);
+      const traffic = Math.min(1, (store.latest?.throughput ?? 0) / thresh.tpMax);
       const err = store.latest?.errorRate ?? 0;
-      LINKS.forEach(([a, b], li) => {
+      links.forEach(([a, b], li) => {
         const A = proj[a], B = proj[b];
         const bad = Math.max(svc[a].state, svc[b].state);
         v.line(A[0], A[1], B[0], B[1], STATE_COLORS[bad], bad ? 0.22 : 0.13, 0.5);
@@ -87,8 +88,8 @@ export function createOrbit(store) {
       svc.forEach((sv, i) => {
         const [px, py, , k] = proj[i];
         const dk = depth(k);
-        const shape = i === HUB ? SOLIDS.ico : SOLIDS[SHAPES[i % SHAPES.length]];
-        const size = (i === HUB ? 0.36 : 0.17) * (0.8 + 0.5 * sv.load);
+        const shape = i === hub ? SOLIDS.ico : SOLIDS[SHAPES[i % SHAPES.length]];
+        const size = (i === hub ? 0.36 : 0.17) * (0.8 + 0.5 * sv.load);
         const spin = t * (0.25 + 0.05 * i) + i;
         const c = STATE_COLORS[sv.state];
         const pulse = sv.state === 2 ? 0.55 + 0.45 * (Math.sin(t * 6) > 0 ? 1 : 0) : sv.state === 1 ? 0.8 + 0.2 * Math.sin(t * 3) : 1;
@@ -118,10 +119,10 @@ export function createOrbit(store) {
 
       // corner readout
       const avail = (1 - err) * 100;
-      const linksUp = LINKS.filter(([a, b]) => Math.max(svc[a].state, svc[b].state) < 2).length;
+      const linksUp = links.filter(([a, b]) => Math.max(svc[a].state, svc[b].state) < 2).length;
       const lines = [
-        ['N', `${String(SERVICES.length).padStart(3)} SERVICES`],
-        ['L', `${String(linksUp).padStart(3)}/${LINKS.length} LINKS`],
+        ['N', `${String(services.length).padStart(3)} SERVICES`],
+        ['L', `${String(linksUp).padStart(3)}/${links.length} LINKS`],
         ['S', `${avail.toFixed(3)} %`],
       ];
       lines.forEach(([a, b], i) => {

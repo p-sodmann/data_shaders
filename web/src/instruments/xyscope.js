@@ -1,4 +1,3 @@
-import { THRESH } from '../config.js';
 import { PH } from '../gl/palette.js';
 import { CURVE_BINS } from '../data/signal.js';
 
@@ -20,7 +19,9 @@ const snapDown = (v) => [...LADDER].reverse().find((l) => l <= v) ?? LADDER[0];
 const snapUp = (v) => LADDER.find((l) => l >= v) ?? LADDER[LADDER.length - 1];
 const fmtMs = (v) => (v < 1 ? v.toFixed(1) : String(Math.round(v)));
 
-export function createXYScope(store, signal) {
+export function createXYScope(station, options = {}) {
+  const { store, signal } = station;
+  const { thresh } = station.profile;
   let ema = null;
   let range = null; // eased Y range: [log10 lo, log10 hi]
   return {
@@ -81,7 +82,7 @@ export function createXYScope(store, signal) {
       }
       v.text(L, T - 14, 'P50 MS · LOG', PH.ok, 0.4, 1.3);
       v.text(R - v.textWidth('SATURATION', 1.3), B + 18, 'SATURATION', PH.ok, 0.4, 1.3);
-      for (let gx = L; gx < R; gx += 4) v.dot(gx, y(THRESH.warn), PH.warn, 0.18, 0.45);
+      for (let gx = L; gx < R; gx += 4) v.dot(gx, y(thresh.warn), PH.warn, 0.18, 0.45);
 
       // four hours of operating points
       for (let i = 0; i < cl.length; i += 2) v.dot(x(cl[i]), y(cl[i + 1]), PH.ok, 0.07, 0.6);

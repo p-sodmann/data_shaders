@@ -1,4 +1,4 @@
-import { ROWS, ROW_SECONDS, THRESH, HIST, SERVICES, serviceOf, ENDPOINTS, EP_ERR_BUDGET, REGIONS, TRACK_STEP } from '../config.js';
+import { ROWS, ROW_SECONDS, HIST, TRACK_STEP } from '../config.js';
 import { toVec, fromVec } from './geo.js';
 
 // The telemetry store: owns the tape archive (one Float32Array per 10-minute
@@ -28,11 +28,14 @@ function hysteresis(prev, v, warn, crit, margin) {
 // the ground track covers the same span as the tape archive
 const TRACK_N = (ROWS * ROW_SECONDS) / TRACK_STEP;
 // Page 4 keeps every signal at 1 s for the same span: latency, errors,
-// throughput, saturation and the load of each service.
-export const SIGNALS = ['LAT', 'ERR', 'TPUT', 'SAT', ...SERVICES];
+// throughput, saturation and the load of each service (so the list depends
+// on the station's services: see store.signals).
+const BASE_SIGNALS = ['LAT', 'ERR', 'TPUT', 'SAT'];
 const SERIES_N = ROWS * ROW_SECONDS;
 
-export function createTelemetry({ hostCount, now, kind, getSpeed }) {
+export function createTelemetry({ profile, hostCount, now, kind, getSpeed }) {
+  const { thresh, epErrBudget, serviceOf } = profile;
+  const signals = [...BASE_SIGNALS, ...profile.services];
   const rows = Array.from({ length: ROWS }, () => new Float32Array(ROW_SECONDS * 2).fill(-1));
   const listeners = new Set();
   let quiet = false;
@@ -42,6 +45,8 @@ export function createTelemetry({ hostCount, now, kind, getSpeed }) {
     hostCount,
     now,
     kind,
+    profile,
+    signals,
     rows,
     rowStart: null,
     lastIdx: -1,
@@ -58,15 +63,15 @@ export function createTelemetry({ hostCount, now, kind, getSpeed }) {
     hostLatEma: new Float32Array(hostCount).fill(-1),
     hostHist: new Float32Array(HIST * hostCount).fill(-1),
     histT: new Float64Array(HIST).fill(-1),
-    services: SERVICES.map((name) => ({ name, state: 0, load: 0, hosts: [] })),
+    services: profile.services.map((name) => ({ name, state: 0, load: 0, hosts: [] })),
     stageLatency: null,
     requests: [],
     // page 3: endpoints (radar contacts) and client regions (ground track)
-    endpoints: ENDPOINTS.map(([route, share, slo]) => ({ route, share, slo, rps: 0, p95: -1, err: 0, pressure: 0, trend: 0, state: 0, live: false })),
-    regions: REGIONS.map(([code, name, lat, lon]) => ({ code, name, lat, lon, rps: 0, rtt: -1, base: -1, err: 0, state: 0, live: false })),
+    endpoints: profile.endpoints.map(([route, share, slo]) => ({ route, share, slo, rps: 0, p95: -1, err: 0, pressure: 0, trend: 0, state: 0, live: false })),
+    regions: profile.regions.map(([code, name, lat, lon]) => ({ code, name, lat, lon, rps: 0, rtt: -1, base: -1, err: 0, state: 0, live: false })),
     centroid: null, // [lat, lon] of the request-weighted traffic centre
     track: new Float32Array(TRACK_N * 2).fill(NaN),
-    series: SIGNALS.map(() => new Float32Array(SERIES_N).fill(NaN)),
+    series: signals.map(() => new Float32Array(SERIES_N).fill(NaN)),
     seriesT: new Float64Array(SERIES_N).fill(-1),
     trackT: new Float64Array(TRACK_N).fill(-1),
     events: [],
@@ -154,12 +159,12 @@ export function createTelemetry({ hostCount, now, kind, getSpeed }) {
       ep.rps = ema(ep.rps, Math.max(0, m.rps), 0.3);
       ep.p95 = ema(ep.p95, m.p95, 0.25);
       ep.err = ema(ep.err, Math.max(0, m.err), 0.2);
-      const p = Math.max(ep.p95 / ep.slo, ep.err / EP_ERR_BUDGET);
+      const p = Math.max(ep.p95 / ep.slo, ep.err / epErrBudget);
       ep.trend = ep.trend + (p - ep.pressure - ep.trend) * 0.08; // closing rate, per second
       ep.pressure = p;
       const st = hysteresis(ep.state, p, 0.75, 1, 0.06);
       if (st !== ep.state) {
-        const what = ep.err / EP_ERR_BUDGET > ep.p95 / ep.slo ? `ERR ${(ep.err * 100).toFixed(1)}%` : `P95 ${Math.round(ep.p95)}MS`;
+        const what = ep.err / epErrBudget > ep.p95 / ep.slo ? `ERR ${(ep.err * 100).toFixed(1)}%` : `P95 ${Math.round(ep.p95)}MS`;
         log(t, st, st ? `${ep.route} ${st === 2 ? 'OVER SLO' : 'CLOSING'} ${what}` : `${ep.route} CLEAR`);
         ep.state = st;
       }
@@ -180,7 +185,7 @@ export function createTelemetry({ hostCount, now, kind, getSpeed }) {
       if (rg.base < 0) rg.base = rg.rtt;
       else if (rg.state === 0) rg.base += (rg.rtt - rg.base) * 0.002;
       const ratio = rg.rtt / Math.max(1, rg.base);
-      const st = Math.max(hysteresis(rg.state, ratio, 1.4, 2, 0.1), hysteresis(rg.state, rg.err, THRESH.errWarn, THRESH.errCrit, 0.002));
+      const st = Math.max(hysteresis(rg.state, ratio, 1.4, 2, 0.1), hysteresis(rg.state, rg.err, thresh.errWarn, thresh.errCrit, 0.002));
       if (st !== rg.state) {
         log(t, st, st ? `ROUTE ${rg.code} ${st === 2 ? 'LOST' : 'DEGRADED'} RTT ${Math.round(rg.rtt)}MS` : `ROUTE ${rg.code} RESTORED`);
         rg.state = st;
@@ -280,9 +285,9 @@ export function createTelemetry({ hostCount, now, kind, getSpeed }) {
 
     const e = s.ema;
     const cand =
-      e.lat > THRESH.crit || e.err > THRESH.errCrit || crit >= 3
+      e.lat > thresh.crit || e.err > thresh.errCrit || crit >= 3
         ? 'INCIDENT'
-        : e.lat > THRESH.warn || e.err > THRESH.errWarn || crit >= 1 || warn >= 3
+        : e.lat > thresh.warn || e.err > thresh.errWarn || crit >= 1 || warn >= 3
           ? 'DEGRADED'
           : 'NOMINAL';
     if (s.stateSince === null) {

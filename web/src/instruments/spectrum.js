@@ -16,7 +16,8 @@ const TICKS = [7200, 3600, 1800, 600, 300, 120, 60, 30];
 const SWEEP_S = 3.5; // seconds per sweep of the live trace
 const label = (p) => (p >= 3600 ? `${p / 3600}H` : p >= 60 ? `${p / 60}M` : `${p}S`);
 
-export function createSpectrum(store, signal) {
+export function createSpectrum(station, options = {}) {
+  const { store, signal } = station;
   let shown = null; // live trace as last painted by the cursor
   let lastCursor = 0;
   return {

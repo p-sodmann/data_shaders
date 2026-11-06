@@ -66,7 +66,8 @@ void main(){
 }
 `;
 
-export function createWeekDial(store, almanac) {
+export function createWeekDial(station, options = {}) {
+  const { store, almanac } = station;
   let tex = null, buf = null, key = '';
   return {
     frag: FRAG,

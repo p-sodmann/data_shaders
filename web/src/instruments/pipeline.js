@@ -1,4 +1,3 @@
-import { STAGES, STAGE_SHARE, THRESH } from '../config.js';
 import { PH, STATE_COLORS } from '../gl/palette.js';
 
 // 10 PIPELINE: requests flow through the serving stages as beam particles.
@@ -6,9 +5,10 @@ import { PH, STATE_COLORS } from '../gl/palette.js';
 // share of latency, so a choking stage visibly builds a queue and glows.
 // Failed requests drop out of the stream in orange.
 
-const S = STAGES.length;
-
-export function createPipeline(store) {
+export function createPipeline(station, options = {}) {
+  const { store } = station;
+  const { thresh, stages, stageShare } = station.profile;
+  const S = stages.length;
   const parts = [];
   let spawn = 0;
   let seed = 1;
@@ -23,9 +23,9 @@ export function createPipeline(store) {
       const W = v.w, H = v.h, t = f.time;
       const dt = f.dt;
       const latest = store.latest;
-      const stage = store.stageLatency ?? STAGE_SHARE.map((s) => s * (latest?.latency ?? 10));
+      const stage = store.stageLatency ?? stageShare.map((s) => s * (latest?.latency ?? 10));
       const total = stage.reduce((a, b) => a + b, 0) || 1;
-      const ratio = stage.map((ms, k) => ms / total / STAGE_SHARE[k]);
+      const ratio = stage.map((ms, k) => ms / total / stageShare[k]);
       const level = ratio.map((r) => (r > 3 ? 2 : r > 1.8 ? 1 : 0));
 
       const L = 40, R = W - 30;
@@ -57,7 +57,7 @@ export function createPipeline(store) {
             v.line(a[0], a[1], b[0], b[1], c, 0.22, 0.45);
           }
         }
-        const name = STAGES[k];
+        const name = stages[k];
         v.text(x - v.textWidth(name, 1.45) / 2, cy + ph / 2 + 8, name, level[k] ? c : PH.ok, level[k] ? 0.9 : 0.45, 1.45);
         const ms = stage[k].toFixed(1);
         v.text(x - v.textWidth(ms, 1.45) / 2, cy + ph / 2 + 22, ms, c, 0.8, 1.45);
@@ -65,7 +65,7 @@ export function createPipeline(store) {
 
       // particles
       const tp = latest?.throughput ?? 0;
-      spawn += dt * Math.min(40, (tp / THRESH.tpMax) * 30);
+      spawn += dt * Math.min(40, (tp / thresh.tpMax) * 30);
       while (spawn >= 1 && parts.length < 140) {
         spawn -= 1;
         const fail = rnd() < (latest?.errorRate ?? 0) * 14;
@@ -97,7 +97,7 @@ export function createPipeline(store) {
       v.text(L - 20, 8, `${Math.round(tp)} REQ/S`, PH.ok, 0.45, 1.45);
       const slow = level.indexOf(Math.max(...level));
       if (level[slow] > 0) {
-        const msg = `BOTTLENECK ${STAGES[slow]} X${ratio[slow].toFixed(1)}`;
+        const msg = `BOTTLENECK ${stages[slow]} X${ratio[slow].toFixed(1)}`;
         v.text(R - v.textWidth(msg, 1.45), 8, msg, STATE_COLORS[level[slow]], 0.9, 1.45);
       }
     },

@@ -1,4 +1,3 @@
-import { THRESH } from '../config.js';
 import { DIGITS } from '../gl/shaders.js';
 
 // 02 LOAD: a moving-coil meter. The needle is a damped spring, so it swings
@@ -64,7 +63,9 @@ void main(){
 }
 `;
 
-export function createMeter(store) {
+export function createMeter(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   let x = 0, v = 0, peak = 0, hold = 0;
   return {
     frag: FRAG,
@@ -80,7 +81,7 @@ export function createMeter(store) {
         hold = 3;
       } else if (hold > 0) hold -= dt;
       else peak = Math.max(shown, peak - dt * 0.05);
-      return { uVal: shown, uPeak: peak, uWarnV: THRESH.satWarn, uCritV: THRESH.satCrit };
+      return { uVal: shown, uPeak: peak, uWarnV: thresh.satWarn, uCritV: thresh.satCrit };
     },
   };
 }

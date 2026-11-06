@@ -1,4 +1,4 @@
-import { ROWS, ROW_SECONDS, STAGE_SHARE, ENDPOINTS, REGIONS, HOME } from '../config.js';
+import { ROWS, ROW_SECONDS } from '../config.js';
 import { distanceKm, solarHour } from './geo.js';
 
 const ROUTES = [
@@ -39,7 +39,8 @@ function dailyTraffic(t, tz) {
   return (0.5 + 0.4 * Math.sin(2 * Math.PI * (day - 0.375))) * weekend;
 }
 
-export function createSimulator({ hostCount = 32, seed = Date.now() } = {}) {
+export function createSimulator({ profile, hostCount = 32, seed = Date.now() }) {
+  const { stageShare, endpoints: epTable, regions: rgTable, home } = profile;
   const rnd = mulberry32(seed >>> 0);
   const gauss = () => {
     let u = 0;
@@ -60,14 +61,14 @@ export function createSimulator({ hostCount = 32, seed = Date.now() } = {}) {
   let rogue = null;
 
   // endpoints: a fixed operating point below the SLO, plus occasional slowdowns
-  const E = ENDPOINTS.length;
+  const E = epTable.length;
   const epBase = Float32Array.from({ length: E }, () => 0.3 + rnd() * 0.18);
   const epErr = Float32Array.from({ length: E }, () => 0.5 + rnd());
   const epNoise = new Float32Array(E);
   const epEvent = Array.from({ length: E }, () => null);
   // regions: RTT from distance, occasional route flaps
-  const G = REGIONS.length;
-  const rgRtt = REGIONS.map(([, , lat, lon]) => 3 + distanceKm(lat, lon, HOME.lat, HOME.lon) / 95);
+  const G = rgTable.length;
+  const rgRtt = rgTable.map(([, , lat, lon]) => 3 + distanceKm(lat, lon, home.lat, home.lon) / 95);
   const rgNoise = new Float32Array(G);
   const rgErr = Float32Array.from({ length: G }, () => 0.5 + rnd());
   const rgEvent = Array.from({ length: G }, () => null);
@@ -168,7 +169,7 @@ export function createSimulator({ hostCount = 32, seed = Date.now() } = {}) {
     }
 
     // where in the pipeline the time goes
-    const w = STAGE_SHARE.map((s, k) => s * (k === 2 ? 1 + job : 1) * (incident && k === incident.stage ? 1 + 4 * inc : 1));
+    const w = stageShare.map((s, k) => s * (k === 2 ? 1 + job : 1) * (incident && k === incident.stage ? 1 + 4 * inc : 1));
     const wSum = w.reduce((a, b) => a + b, 0);
     const stageLatency = w.map((x) => (latency * x) / wSum);
 
@@ -191,7 +192,7 @@ export function createSimulator({ hostCount = 32, seed = Date.now() } = {}) {
     }
 
     const latRatio = latency / 11;
-    const endpoints = ENDPOINTS.map(([, share, slo], e) => {
+    const endpoints = epTable.map(([, share, slo], e) => {
       epNoise[e] += 0.15 * -epNoise[e] + 0.3 * gauss();
       if (epEvent[e] && t - epEvent[e].t0 > epEvent[e].dur) epEvent[e] = null;
       if (!epEvent[e] && rnd() < 0.00005) epEvent[e] = { t0: t, dur: 90 + rnd() * 300, mul: 1.5 + rnd() * 0.9 };
@@ -205,12 +206,12 @@ export function createSimulator({ hostCount = 32, seed = Date.now() } = {}) {
       };
     });
 
-    const weights = REGIONS.map(([, , , lon, share]) => {
+    const weights = rgTable.map(([, , , lon, share]) => {
       const h = solarHour(t, lon);
       return share * (0.25 + 0.75 * Math.pow(0.5 - 0.5 * Math.cos((2 * Math.PI * (h - 4)) / 24), 1.4));
     });
     const wTotal = weights.reduce((a, b) => a + b, 0);
-    const regions = REGIONS.map((_, g) => {
+    const regions = rgTable.map((_, g) => {
       rgNoise[g] += 0.1 * -rgNoise[g] + 0.3 * gauss();
       if (rgEvent[g] && t - rgEvent[g].t0 > rgEvent[g].dur) rgEvent[g] = null;
       if (!rgEvent[g] && rnd() < 0.00003) {
@@ -235,8 +236,10 @@ export function createSimulator({ hostCount = 32, seed = Date.now() } = {}) {
 
 // Source contract (see README): { kind, hostCount, speed, now(), setSpeed(),
 // backfill(fromT) -> samples[], start(push), stop(), triggerIncident() }
-export function createSimulatedSource({ hostCount = 32, speed = 1 } = {}) {
-  const sim = createSimulator({ hostCount });
+// `seed` fixes the random sequence so two sim stations differ; without one
+// every boot draws a fresh cluster, as before.
+export function createSimulatedSource({ profile, hostCount = 32, speed = 1, seed }) {
+  const sim = createSimulator({ profile, hostCount, seed: seed ?? Date.now() });
   let baseT = Date.now() / 1000;
   let baseWall = performance.now();
   let sp = speed;
@@ -296,19 +299,22 @@ export function createSimulatedSource({ hostCount = 32, speed = 1 } = {}) {
 // model as step() (daily and weekly traffic, the hourly job, incidents every
 // one to two hours) but is computed per minute and seeded per day, so the same
 // past comes back on every boot. About one day in five has a major outage: a
-// long partial outage that fails a fifth or so of requests.
+// long partial outage that fails a fifth or so of requests. A seed gives
+// another station another past; seed 0 (the default) is the original one.
 const hash32 = (n) => {
   n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
   n = Math.imul(n ^ (n >>> 16), 0x45d9f3b);
   return (n ^ (n >>> 16)) >>> 0;
 };
 
-export function createHistorySynth() {
+export function createHistorySynth({ seed = 0 } = {}) {
+  const salt = Math.imul(seed | 0, 0x9e3779b1);
+  const h = (n) => hash32((n + salt) | 0);
   const tz = new Date().getTimezoneOffset() * 60;
   const days = new Map();
   function incidentsOf(d) {
     if (days.has(d)) return days.get(d);
-    const rnd = mulberry32(hash32(d * 7919 + 17));
+    const rnd = mulberry32(h(d * 7919 + 17));
     const list = [];
     for (let t = d * 86400 + rnd() * 3600; t < (d + 1) * 86400; t += 2400 + rnd() * 4800) {
       list.push({ t0: t, ramp: 30 + rnd() * 50, hold: 140 + rnd() * 320, fall: 80 + rnd() * 120, sev: 0.55 + rnd() * 0.45, fail: 0 });
@@ -336,7 +342,7 @@ export function createHistorySynth() {
   // slow wander: value noise on a 10-minute lattice
   const wander = (t) => {
     const k = Math.floor(t / 600), f = smooth((t % 600) / 600);
-    const a = hash32(k) / 4294967296 - 0.5, b = hash32(k + 1) / 4294967296 - 0.5;
+    const a = h(k) / 4294967296 - 0.5, b = h(k + 1) / 4294967296 - 0.5;
     return a + (b - a) * f;
   };
   return function minute(mi) {
@@ -351,7 +357,7 @@ export function createHistorySynth() {
     const traffic = dailyTraffic(t0 + 30, tz);
     const hm = mod(Math.floor((t0 - tz) / 60), 60);
     const job = hm < 3 ? 0.64 : 0;
-    const jit = hash32(mi) / 4294967296 - 0.5;
+    const jit = h(mi) / 4294967296 - 0.5;
     const saturation = clamp(0.2 + 0.42 * traffic + 0.1 * job + 0.38 * inc + 0.03 * jit, 0.02, 0.995);
     const throughput = Math.max(5, 150 + 230 * traffic + 60 * job - 140 * inc);
     const latency = Math.max(2, 7 + 10 * saturation * saturation + 2 * wander(t0) + 6 * job + 30 * inc + 0.6 * jit);

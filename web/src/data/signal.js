@@ -1,5 +1,3 @@
-import { SIGNALS } from './telemetry.js';
-import { THRESH } from '../config.js';
 
 // Signal analysis for page 4. Everything here is derived from the store's
 // 4-hour, 1-second signal history; nothing needs new data.
@@ -203,7 +201,9 @@ function median(arr) {
   return a.length ? a[a.length >> 1] : NaN;
 }
 
-export function createSignal(store) {
+export function createSignal(store, profile) {
+  const { thresh } = profile;
+  const SIGNALS = store.signals;
   const longP = periodsOf(LONG);
   const shortP = periodsOf(SHORT);
   const spec = { amp: new Float32Array(LONG.bins), hold: new Float32Array(LONG.bins), live: new Float32Array(LONG.bins).fill(NaN), t: -1, peaks: [] };
@@ -253,7 +253,7 @@ export function createSignal(store) {
   function findRhythms(x, t0, now) {
     const n = x.length, dt = LONG.step;
     // rhythms describe routine behaviour: leave incidents (above WARN) out
-    x = x.map((v) => (v > THRESH.warn ? NaN : v));
+    x = x.map((v) => (v > thresh.warn ? NaN : v));
     const hp = highpass(x, Math.round(1200 / dt));
     if (!hp) return [];
     // clip at 4 robust sigma: an incident should weigh no more than a scheduled bump
@@ -406,7 +406,7 @@ export function createSignal(store) {
       if (lat[i] !== lat[i] || sat[i] !== sat[i]) continue;
       // the curve is learned from healthy operation only; incidents would
       // otherwise teach it that high latency at high load is normal
-      if (lat[i] <= THRESH.warn) bins[Math.min(CURVE_BINS - 1, Math.floor(sat[i] * CURVE_BINS))].push(lat[i]);
+      if (lat[i] <= thresh.warn) bins[Math.min(CURVE_BINS - 1, Math.floor(sat[i] * CURVE_BINS))].push(lat[i]);
       if (i % 6 === 0) cloud.push(sat[i], lat[i]);
     }
     let low = null;

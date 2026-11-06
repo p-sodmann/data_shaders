@@ -1,6 +1,5 @@
 import { createDotMatrix } from './dotmatrix.js';
 import { hms } from '../data/telemetry.js';
-import { THRESH } from '../config.js';
 import { fmtPeriod } from '../data/signal.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -12,7 +11,9 @@ const centered = (api, str, color) => {
 // Big numeral + segmented bar. Segment colour depends on the segment's
 // position on the scale (like an LED VU bar), so the bar itself shows where
 // the thresholds are.
-export function createReadout(store, { value, format, max, warn = Infinity, crit = Infinity, chars = 6 }) {
+export function createReadout(station, options = {}) {
+  const { store } = station;
+  const { value, format, max, warn = Infinity, crit = Infinity, chars = 6 } = options;
   return createDotMatrix({
     layout: (w, h) => Math.max(3, Math.min(h / 12, (w - 4) / (chars * 6 + 2))),
     draw(api) {
@@ -37,7 +38,8 @@ export function createReadout(store, { value, format, max, warn = Infinity, crit
 // Teletype event log: newest at the bottom, typed out one character at a time.
 const TYPE_MS = 24;
 const LEVEL_COLOR = [1, 2, 3];
-export function createLog(store) {
+export function createLog(station, options = {}) {
+  const { store } = station;
   return createDotMatrix({
     crt: { decay: 0.78 },
     layout: (w, h) => clamp(h / 57, 2.2, 3.6),
@@ -67,7 +69,8 @@ export function createLog(store) {
   });
 }
 
-export function createClock(store) {
+export function createClock(station, options = {}) {
+  const { store } = station;
   return createDotMatrix({
     layout: (w, h) => Math.max(2, Math.min(h / 10, w / 46)),
     draw(api) {
@@ -83,7 +86,8 @@ function elapsed(sec) {
   if (sec >= 3600) return `${Math.floor(sec / 3600)}H${pad(Math.floor(sec / 60) % 60)}`;
   return `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`;
 }
-export function createStatus(store) {
+export function createStatus(station, options = {}) {
+  const { store } = station;
   return createDotMatrix({
     layout: (w, h) => Math.max(2, Math.min(h / 10, w / 78)),
     draw(api, f) {
@@ -108,7 +112,9 @@ const FLAG = ['NOM', 'WARN', 'CRIT'];
 const lvl = (v, warn, crit) => (v >= crit ? 2 : v >= warn ? 1 : 0);
 
 // 12 CAUTION & WARNING: the rules behind the alarm lamp, mission-control style.
-export function createRules(store) {
+export function createRules(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   const COLS = [0, 3, 18, 26, 31];
   return createDotMatrix({
     layout: (w, h) => clamp(Math.min(h / 57, w / (35 * 6 + 2)), 1.8, 4),
@@ -119,9 +125,9 @@ export function createRules(store) {
       const e = store.ema;
       const c = store.counts;
       const rules = [
-        ['P50 LATENCY', `${e.lat.toFixed(1)}MS`, `<${THRESH.warn}`, lvl(e.lat, THRESH.warn, THRESH.crit)],
-        ['ERROR RATE', `${(e.err * 100).toFixed(2)}%`, `<${THRESH.errWarn * 100}`, lvl(e.err, THRESH.errWarn, THRESH.errCrit)],
-        ['SATURATION', `${Math.round(x.saturation * 100)}%`, `<${THRESH.satWarn * 100}`, lvl(x.saturation, THRESH.satWarn, THRESH.satCrit)],
+        ['P50 LATENCY', `${e.lat.toFixed(1)}MS`, `<${thresh.warn}`, lvl(e.lat, thresh.warn, thresh.crit)],
+        ['ERROR RATE', `${(e.err * 100).toFixed(2)}%`, `<${thresh.errWarn * 100}`, lvl(e.err, thresh.errWarn, thresh.errCrit)],
+        ['SATURATION', `${Math.round(x.saturation * 100)}%`, `<${thresh.satWarn * 100}`, lvl(x.saturation, thresh.satWarn, thresh.satCrit)],
         ['NODES CRIT', c.crit, '=0', lvl(c.crit, 1, 3)],
         ['NODES DOWN', c.off, '=0', lvl(c.off, 1, 4)],
         ['SOURCE AGE', `${age.toFixed(1)}S`, '<5', lvl(age, 5, 30)],
@@ -143,7 +149,9 @@ export function createRules(store) {
 }
 
 // 13 TRACE: sampled requests, newest at the bottom.
-export function createTrace(store) {
+export function createTrace(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   const COLS = [0, 9, 22, 26, 34];
   return createDotMatrix({
     layout: (w, h) => clamp(Math.min(h / 57, w / (37 * 6 + 2)), 1.8, 4),
@@ -153,7 +161,7 @@ export function createTrace(store) {
       const y0 = Math.max(0, Math.floor((api.h - (lines * 8 - 1)) / 2)) + (lines - reqs.length) * 8;
       reqs.forEach((r, i) => {
         const err = r.status >= 500, miss = r.status >= 400 && !err;
-        const slow = r.ms > THRESH.warn;
+        const slow = r.ms > thresh.warn;
         row(
           api,
           y0 + i * 8,
@@ -172,7 +180,8 @@ export function createTrace(store) {
 }
 
 // 16 CONTACTS: the radar's endpoints in table form, in bearing order.
-export function createContacts(store) {
+export function createContacts(station, options = {}) {
+  const { store } = station;
   const COLS = [0, 4, 17, 23, 29, 34, 39];
   return createDotMatrix({
     layout: (w, h) => clamp(Math.min(h / ((store.endpoints.length + 1) * 8 + 5), w / (41 * 6 + 10)), 1.6, 4),
@@ -209,7 +218,9 @@ export function createContacts(store) {
 }
 
 // 17 ORIGINS: client regions by share of traffic, with route health.
-export function createOrigins(store) {
+export function createOrigins(station, options = {}) {
+  const { store } = station;
+  const { thresh } = station.profile;
   const COLS = [0, 4, 15, 21, 27, 33, 38];
   const BAR = 10;
   return createDotMatrix({
@@ -235,7 +246,7 @@ export function createOrigins(store) {
             ['', 1],
             [Math.round(rg.rps), 4],
             [`${Math.round(rg.rtt)}`, rg.state ? col : 1],
-            [(rg.err * 100).toFixed(2), rg.err >= THRESH.errCrit ? 3 : rg.err >= THRESH.errWarn ? 2 : 4],
+            [(rg.err * 100).toFixed(2), rg.err >= thresh.errCrit ? 3 : rg.err >= thresh.errWarn ? 2 : 4],
             [['NOM', 'DEG', 'LOST'][rg.state], rg.state ? col : 4],
           ],
           COLS,
@@ -259,7 +270,8 @@ export function createOrigins(store) {
 // first, with their folded profile (one cycle, averaged over four hours), the
 // time of the next peak and a countdown. A rhythm that began inside the
 // window is NEW, in amber, with the time it started.
-export function createRhythms(store, signal) {
+export function createRhythms(station, options = {}) {
+  const { store, signal } = station;
   const COLS = [0, 3, 10, 16, 23, 33, 40];
   const SPARK = 30;
   return createDotMatrix({
@@ -318,7 +330,9 @@ export function createRhythms(store, signal) {
 // long it lasted, how bad it got, and what it cost in error budget. The
 // header keeps the score: incidents in the last day and week, mean time to
 // recover, mean time between incidents, and time since the last one ended.
-export function createLogbook(almanac) {
+export function createLogbook(station, options = {}) {
+  const { almanac } = station;
+  const { thresh } = station.profile;
   const COLS = [0, 7, 13, 19, 25, 32];
   const dur = (min) => (min >= 60 ? `${Math.floor(min / 60)}H${String(Math.round(min % 60)).padStart(2, '0')}` : `${Math.round(min)}M`);
   const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -354,7 +368,7 @@ export function createLogbook(almanac) {
             [hms(inc.start * 60).slice(0, 5), open ? 3 : 1],
             [open ? 'OPEN' : dur(inc.end - inc.start + 1), open ? 3 : big ? 2 : 1],
             [`${Math.round(inc.peakLat)}MS`, inc.peakLat >= 35 ? 3 : 2],
-            [`${(inc.peakErr * 100).toFixed(1)}%`, inc.peakErr >= THRESH.errCrit ? 3 : inc.peakErr >= THRESH.errWarn ? 2 : 4],
+            [`${(inc.peakErr * 100).toFixed(1)}%`, inc.peakErr >= thresh.errCrit ? 3 : inc.peakErr >= thresh.errWarn ? 2 : 4],
             [`${(inc.cost * 100).toFixed(inc.cost >= 0.1 ? 0 : inc.cost >= 0.01 ? 1 : 2)}%`, big ? 2 : 4],
           ],
           COLS,

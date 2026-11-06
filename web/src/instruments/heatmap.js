@@ -80,7 +80,8 @@ const median = (a) => {
   return s.length ? s[s.length >> 1] : NaN;
 };
 
-export function createHeatmap(store, almanac) {
+export function createHeatmap(station, options = {}) {
+  const { store, almanac } = station;
   let tex = null, key = '';
   const buf = new Uint8Array(25 * 8 * 4);
   const inst = {

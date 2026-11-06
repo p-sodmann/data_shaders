@@ -73,7 +73,7 @@ The device's long memory. One record per minute (latency, errors, throughput, lo
 | 26 | **Burn rate** | How fast the budget is being spent, as multiples of the rate that would use it up exactly over the window. 6 h, 1 h and 5 min traces over 24 h. FAST BURN (14.4×, 1 h and 5 min) and SLOW BURN (6×, 6 h and 30 min) light only when both of their windows are over the rate. |
 | 27 | **Logbook** | Every incident in the almanac, newest first: start, duration, peak latency and error rate, and the share of the error budget it cost. The header shows the time since the last incident, counts for 24 h and 7 d, MTTR and MTBF. |
 
-The SLO target, window and alert rates are set in `SLO` and `BURN_ALERTS` in [src/config.js](src/config.js).
+The SLO target, window and alert rates are the station profile's `slo` and `burnAlerts` ([src/station/profile.js](src/station/profile.js)).
 
 Colour is a signal, never decoration: mint is nominal, amber is warn, orange is critical.
 
@@ -86,7 +86,7 @@ The pointer hides after 2.5 s.
 
 `?station=edge-eu-2&hosts=48&speed=10&fps=30&dpr=1.5&finish=ivory&page=2&cycle=120&source=/telemetry.json`
 
-Use `fps=30` and `dpr=1` on weak machines or 4K panels.
+Use `fps=30` and `dpr=1` on weak machines or 4K panels. `stations=2` is a debug flag (see Architecture).
 
 ## Connecting real data
 
@@ -101,12 +101,12 @@ Set `?source=<url>` to poll a JSON endpoint once per second ([src/data/polling.j
   "regions": [{ "code": "IAD", "rps": 64, "rtt": 92, "err": 0.001 }] }
 ```
 
-`stages`, `requests`, `endpoints`, `regions` and per-host `latency` are optional. Service names, links and pipeline stages are set in `config.js`.
-The same file sets endpoint SLOs (`ENDPOINTS`), client regions with their coordinates (`REGIONS`) and the station's own position (`HOME`).
+`stages`, `requests`, `endpoints`, `regions` and per-host `latency` are optional. Service names, links and pipeline stages are set in the station profile ([src/station/profile.js](src/station/profile.js)).
+The same profile sets endpoint SLOs (`endpoints`), client regions with their coordinates (`regions`) and the station's own position (`home`).
 Endpoints and regions are matched by `route` / `code`, or by position in the array.
 
 `errorRate` is a fraction (0.003 = 0.3 %). Host `state` is one of `ok`, `warn`, `crit` or `offline`.
-Thresholds live in [src/config.js](src/config.js).
+Thresholds are the profile's `thresh`.
 
 To use another transport (WebSocket, Prometheus), write a source with the same shape:
 `{ kind, hostCount, speed, now(), setSpeed(), backfill(fromT) -> samples[], start(push), stop(), triggerIncident() }`.
@@ -115,11 +115,20 @@ If `backfill` returns history (for example from a Prometheus range query), the a
 ## Architecture
 
 ```
+src/station/    station = profile (thresholds, SLO, topology, endpoints, regions)
+                + source + telemetry store + almanac + signal analyser
 src/data/       simulator + polling sources → telemetry store (tape rows, state, events)
 src/gl/         engine: one WebGL2 context renders every screen
 src/instruments each instrument = fragment shader + update() that returns uniforms
+src/config.js   device constants (tape geometry, history lengths) and URL parameters
 src/App.jsx     the housing (layout, labels, keys)
 ```
+
+Nothing station-specific is a module global. `createStation(def)` builds one monitored
+system, and every instrument factory takes it: `createX(station, options = {})`, reading
+`station.store`, `station.signal`, `station.almanac` and `station.profile`. Several stations
+can run side by side; `?stations=2` starts a second, hidden sim station and logs both
+latency streams to the console once per second (a debug check).
 
 Instruments come in two kinds:
 
@@ -134,11 +143,11 @@ cascade when a page is switched in.
 Adding an instrument means writing one object:
 
 ```js
-export const myInstrument = {
+export const createMyInstrument = (station, options = {}) => ({
   frag: `uniform float uValue; void main(){ fragColor = vec4(PH_OK*uValue, 1.); }`,
   crt: { curve: 0.03, scan: 0.8, bloom: 0.9, decay: 0.86 },
-  update(gl, state, frame) { return { uValue: store.latest.saturation }; },
-};
+  update(gl, state, frame) { return { uValue: station.store.latest.saturation }; },
+});
 ```
 
 A vector instrument is just as short:
@@ -153,6 +162,6 @@ export const sweep = {
 };
 ```
 
-Then mount it with `<Screen inst={myInstrument} />`. The shared header gives
+Then mount it with `<Screen inst={createMyInstrument(station)} />` (built once, as in `App.jsx`). The shared header gives
 every shader the phosphor palette, `uRes`, `uTime`, `uDpr` and SDF helpers.
 For text, use `createDotMatrix` with a `draw(api)` callback.

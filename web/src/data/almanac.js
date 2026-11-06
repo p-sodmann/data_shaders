@@ -1,4 +1,4 @@
-import { THRESH, SLO, BURN_ALERTS, ALMANAC_DAYS } from '../config.js';
+import { ALMANAC_DAYS } from '../config.js';
 
 // The almanac: one record per minute for the last 30 days, kept in the browser
 // (IndexedDB) so the device remembers across reloads. Page 5 reads it.
@@ -16,11 +16,12 @@ import { THRESH, SLO, BURN_ALERTS, ALMANAC_DAYS } from '../config.js';
 const N = ALMANAC_DAYS * 1440;
 const SEV = { NOMINAL: 0, DEGRADED: 1, INCIDENT: 2 };
 const DB = 'mars', STORE = 'almanac', SAVE_MS = 60000;
-const BUDGET = 1 - SLO.target;
 
 export const slotOf = (mi) => ((mi % N) + N) % N;
 
-export function createAlmanac({ key }) {
+export function createAlmanac({ profile, key }) {
+  const { thresh, slo, burnAlerts } = profile;
+  const BUDGET = 1 - slo.target;
   const m = new Int32Array(N).fill(-1);
   const lat = new Float32Array(N), err = new Float32Array(N), tp = new Float32Array(N), sat = new Float32Array(N);
   const st = new Uint8Array(N);
@@ -73,7 +74,7 @@ export function createAlmanac({ key }) {
     for (let mi = from; mi < to; mi++) {
       if (m[slotOf(mi)] === mi) continue;
       const x = gen(mi);
-      const s = x.latency > THRESH.crit || x.errorRate > THRESH.errCrit ? 2 : x.latency > THRESH.warn || x.errorRate > THRESH.errWarn ? 1 : 0;
+      const s = x.latency > thresh.crit || x.errorRate > thresh.errCrit ? 2 : x.latency > thresh.warn || x.errorRate > thresh.errWarn ? 1 : 0;
       write(mi, { lat: x.latency, err: x.errorRate, tp: x.throughput, sat: x.saturation, st: s });
       n++;
     }
@@ -187,13 +188,13 @@ export function createAlmanac({ key }) {
         return t > 0 ? b / t / BUDGET : NaN;
       });
     const burn = { m5: series(5), h1: series(60), h6: series(360) };
-    const alerts = BURN_ALERTS.map((a) => ({ ...a, long: burnAt(end, a.long), short: burnAt(end, a.short) })).map((a) => ({
+    const alerts = burnAlerts.map((a) => ({ ...a, long: burnAt(end, a.long), short: burnAt(end, a.short) })).map((a) => ({
       ...a,
       firing: a.long >= a.rate && a.short >= a.rate,
     }));
     const b6 = burnAt(end, 360);
     const remaining = 1 - consumed;
-    const daysLeft = remaining <= 0 ? 0 : b6 > 0 ? (remaining * SLO.days) / b6 : Infinity;
+    const daysLeft = remaining <= 0 ? 0 : b6 > 0 ? (remaining * slo.days) / b6 : Infinity;
 
     // incident statistics over the last 7 days
     const week = incidents.filter((x) => x.start > end - 7 * 1440);

@@ -51,7 +51,8 @@ void main(){
 }
 `;
 
-export function createWaterfall(store, signal) {
+export function createWaterfall(station, options = {}) {
+  const { store, signal } = station;
   let tex = null, uploaded = -1;
   return {
     frag: FRAG,

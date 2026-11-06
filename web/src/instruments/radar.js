@@ -24,7 +24,8 @@ const RINGS = [
   [rangeOf(1), 'SLO'],
 ];
 
-export function createRadar(store) {
+export function createRadar(station, options = {}) {
+  const { store } = station;
   const n = store.endpoints.length;
   const bearing = store.endpoints.map((_, i) => ((i + 0.35) / n) * TAU);
   const echoes = store.endpoints.map(() => []);

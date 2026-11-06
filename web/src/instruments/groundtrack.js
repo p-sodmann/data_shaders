@@ -1,4 +1,4 @@
-import { HOME, TRACK_STEP } from '../config.js';
+import { TRACK_STEP } from '../config.js';
 import { PH, STATE_COLORS } from '../gl/palette.js';
 import { greatCircle, sunPosition } from '../data/geo.js';
 import { LAND } from './land.js';
@@ -17,8 +17,10 @@ const LAT0 = 80, LAT1 = -60;
 const fmtLat = (lat) => `${Math.abs(lat).toFixed(0).padStart(2, '0')}${lat < 0 ? 'S' : 'N'}`;
 const fmtLon = (lon) => `${Math.abs(lon).toFixed(0).padStart(3, '0')}${lon < 0 ? 'W' : 'E'}`;
 
-export function createGroundTrack(store) {
-  const arcs = store.regions.map((rg) => greatCircle(rg.lat, rg.lon, HOME.lat, HOME.lon, 64));
+export function createGroundTrack(station, options = {}) {
+  const { store } = station;
+  const { home } = station.profile;
+  const arcs = store.regions.map((rg) => greatCircle(rg.lat, rg.lon, home.lat, home.lon, 64));
   const cellLat = Array.from({ length: LAND.rows }, (_, r) => (LAND.lat0 - (r + 0.5) * LAND.step) * R);
   const cellLon = Array.from({ length: LAND.cols }, (_, c) => (LAND.lon0 + (c + 0.5) * LAND.step) * R);
 
@@ -114,7 +116,7 @@ export function createGroundTrack(store) {
       });
 
       // this station
-      const hx = px(HOME.lon), hy = py(HOME.lat);
+      const hx = px(home.lon), hy = py(home.lat);
       v.poly([[hx, hy - 6], [hx + 6, hy], [hx, hy + 6], [hx - 6, hy]], PH.ok, 0.85, 0.55, true);
       v.dot(hx, hy, PH.ok, 1, 0.8);
 

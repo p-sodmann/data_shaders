@@ -66,7 +66,8 @@ function gridFor(n, aspect) {
   return best;
 }
 
-export function createMatrix(store) {
+export function createMatrix(station, options = {}) {
+  const { store } = station;
   let tex = null;
   let buf = new Uint8Array(0);
   return {

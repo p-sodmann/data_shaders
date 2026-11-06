@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CONFIG, ROWS, ROW_SECONDS, THRESH, SLO } from './config.js';
-import { store, source, almanac } from './runtime.js';
+import { CONFIG, ROWS, ROW_SECONDS } from './config.js';
+import { station } from './runtime.js';
 import { createEngine } from './gl/engine.js';
 import { hm } from './data/telemetry.js';
 import { createTape, rowGeom, tapeHeight, TAPE } from './instruments/tape.js';
@@ -13,7 +13,6 @@ import { createSlices } from './instruments/slices.js';
 import { createPipeline } from './instruments/pipeline.js';
 import { createRadar } from './instruments/radar.js';
 import { createGroundTrack } from './instruments/groundtrack.js';
-import { createSignal } from './data/signal.js';
 import { createSpectrum } from './instruments/spectrum.js';
 import { createWaterfall, WF, WF_TICKS } from './instruments/waterfall.js';
 import { createXYScope } from './instruments/xyscope.js';
@@ -62,7 +61,7 @@ function Module({ num, name, meta, className = '', children }) {
 
 // Labels printed on the tape glass. They share the shader's geometry, and
 // slide with the tape when a row is archived.
-function TapeOverlay({ rowStart }) {
+function TapeOverlay({ rowStart, thresh }) {
   if (rowStart == null) return null;
   const rows = [];
   for (let k = 0; k < ROWS; k++) {
@@ -85,17 +84,17 @@ function TapeOverlay({ rowStart }) {
       {m === 10 ? '10 MIN' : `+${m}`}
     </span>
   ));
-  const wy = (TAPE.Y0 + tapeHeight(THRESH.warn)) * 100;
-  const cy = (TAPE.Y0 + tapeHeight(THRESH.crit)) * 100;
+  const wy = (TAPE.Y0 + tapeHeight(thresh.warn, thresh.max)) * 100;
+  const cy = (TAPE.Y0 + tapeHeight(thresh.crit, thresh.max)) * 100;
   return (
     <>
       {rows}
       {axis}
       <span className="ov thr warn" style={{ bottom: `${wy}%`, right: `${(1 - TAPE.XR) * 100}%` }}>
-        WARN {THRESH.warn}
+        WARN {thresh.warn}
       </span>
       <span className="ov thr crit" style={{ bottom: `${cy}%`, right: `${(1 - TAPE.XR) * 100}%` }}>
-        CRIT {THRESH.crit}
+        CRIT {thresh.crit}
       </span>
       <span className="ov corner">P50 MS · −4 H ↑ · NOW ↓</span>
     </>
@@ -208,6 +207,8 @@ const toggleFullscreen = () => {
 };
 
 export default function App() {
+  const { store, source, profile } = station;
+  const { thresh } = profile;
   const canvasRef = useRef(null);
   const [engine, setEngine] = useState(null);
   const [failure, setFailure] = useState(null);
@@ -219,59 +220,60 @@ export default function App() {
   const [cycle, setCycle] = useState(CONFIG.cycle);
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot);
 
+  // Every instrument is built from the station it shows.
   const inst = useMemo(() => {
-    const signal = createSignal(store);
+    const st = station;
     return {
-      tape: createTape(store),
-      meter: createMeter(store),
-      matrix: createMatrix(store),
-      status: createStatus(store),
-      clock: createClock(store),
-      log: createLog(store),
-      latency: createReadout(store, {
+      tape: createTape(st),
+      meter: createMeter(st),
+      matrix: createMatrix(st),
+      status: createStatus(st),
+      clock: createClock(st),
+      log: createLog(st),
+      latency: createReadout(st, {
         value: (s) => s.disp?.lat,
         format: (v) => v.toFixed(1),
-        max: THRESH.max,
-        warn: THRESH.warn,
-        crit: THRESH.crit,
+        max: thresh.max,
+        warn: thresh.warn,
+        crit: thresh.crit,
         chars: 5,
       }),
-      throughput: createReadout(store, {
+      throughput: createReadout(st, {
         value: (s) => s.disp?.tp,
         format: (v) => String(Math.round(v)),
-        max: THRESH.tpMax,
+        max: thresh.tpMax,
         chars: 5,
       }),
-      errors: createReadout(store, {
+      errors: createReadout(st, {
         value: (s) => s.disp?.err,
         format: (v) => (v * 100).toFixed(2),
-        max: THRESH.errMax,
-        warn: THRESH.errWarn,
-        crit: THRESH.errCrit,
+        max: thresh.errMax,
+        warn: thresh.errWarn,
+        crit: thresh.errCrit,
         chars: 5,
       }),
-      orbit: createOrbit(store),
-      fleet: createFleet(store),
-      slices: createSlices(store),
-      pipeline: createPipeline(store),
-      rules: createRules(store),
-      trace: createTrace(store),
-      radar: createRadar(store),
-      ground: createGroundTrack(store),
-      contacts: createContacts(store),
-      origins: createOrigins(store),
-      spectrum: createSpectrum(store, signal),
-      waterfall: createWaterfall(store, signal),
-      xy: createXYScope(store, signal),
-      correlator: createCorrelator(store, signal),
-      rhythms: createRhythms(store, signal),
-      dial: createWeekDial(store, almanac),
-      heatmap: createHeatmap(store, almanac),
-      budget: createBudget(almanac),
-      burn: createBurnRate(store, almanac),
-      logbook: createLogbook(almanac),
+      orbit: createOrbit(st),
+      fleet: createFleet(st),
+      slices: createSlices(st),
+      pipeline: createPipeline(st),
+      rules: createRules(st),
+      trace: createTrace(st),
+      radar: createRadar(st),
+      ground: createGroundTrack(st),
+      contacts: createContacts(st),
+      origins: createOrigins(st),
+      spectrum: createSpectrum(st),
+      waterfall: createWaterfall(st),
+      xy: createXYScope(st),
+      correlator: createCorrelator(st),
+      rhythms: createRhythms(st),
+      dial: createWeekDial(st),
+      heatmap: createHeatmap(st),
+      budget: createBudget(st),
+      burn: createBurnRate(st),
+      logbook: createLogbook(st),
     };
-  }, []);
+  }, [thresh]);
 
   useEffect(() => localStorage.setItem('mars.page', page), [page]);
   useEffect(() => {
@@ -379,7 +381,7 @@ export default function App() {
             </div>
             <div className="plate">
               <span className="cap">Station</span>
-              <span className="plate-val">{CONFIG.station}</span>
+              <span className="plate-val">{station.name}</span>
             </div>
             <div className="plate">
               <span className="cap">Page{cycle ? ` · auto ${cycle}s` : ''}</span>
@@ -406,7 +408,7 @@ export default function App() {
               <main className="deck" key="p1-deck">
                 <Module num="01" name="Tape archive" meta="P50 latency · 10 min per row · 4 h" className="m-tape">
                   <Screen inst={inst.tape}>
-                    <TapeOverlay rowStart={snap.rowStart} />
+                    <TapeOverlay rowStart={snap.rowStart} thresh={thresh} />
                   </Screen>
                 </Module>
                 <div className="side">
@@ -526,7 +528,7 @@ export default function App() {
                 </Module>
               </main>
               <section className="bank p5" key="p5-bank">
-                <Module num="25" name="Error budget" meta={`Availability SLO · rolling ${SLO.days} d`}>
+                <Module num="25" name="Error budget" meta={`Availability SLO · rolling ${profile.slo.days} d`}>
                   <Screen inst={inst.budget} />
                 </Module>
                 <Module num="26" name="Burn rate" meta="× sustainable · 24 h · multi-window alerts">
@@ -555,7 +557,7 @@ export default function App() {
             </div>
             <div className="grille" />
             <div className="serial">
-              Source {snap.kind} · {CONFIG.hosts} nodes · SN 0001
+              Source {snap.kind} · {source.hostCount} nodes · SN 0001
             </div>
           </footer>
 

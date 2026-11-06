@@ -12,8 +12,7 @@
 //   "endpoints": [{ "route": "/v1/predict", "rps": 120, "p95": 18.2, "err": 0.002 }],  // optional
 //   "regions": [{ "code": "IAD", "rps": 64, "rtt": 92, "err": 0.001 }]                 // optional
 // }
-// endpoints and regions are matched to config.js by route / code, or by position.
-import { ENDPOINTS, REGIONS } from '../config.js';
+// endpoints and regions are matched to the station profile by route / code, or by position.
 
 const STATES = { ok: 0, warn: 1, crit: 2, offline: 3, down: 3 };
 
@@ -28,7 +27,7 @@ function align(list, names, key, fields) {
   });
 }
 
-function normalize(j, n) {
+function normalize(j, n, profile) {
   const hosts = Array.isArray(j.hosts) ? j.hosts : [];
   const hostLoads = new Float32Array(n);
   const hostStates = new Uint8Array(n);
@@ -58,12 +57,12 @@ function normalize(j, n) {
     hostLatency,
     stageLatency: Array.isArray(j.stages) ? j.stages.map(Number) : null,
     requests: Array.isArray(j.requests) ? j.requests : [],
-    endpoints: align(j.endpoints, ENDPOINTS.map((e) => e[0]), 'route', ['rps', 'p95', 'err']),
-    regions: align(j.regions, REGIONS.map((r) => r[0]), 'code', ['rps', 'rtt', 'err']),
+    endpoints: align(j.endpoints, profile.endpoints.map((e) => e[0]), 'route', ['rps', 'p95', 'err']),
+    regions: align(j.regions, profile.regions.map((r) => r[0]), 'code', ['rps', 'rtt', 'err']),
   };
 }
 
-export function createPollingSource({ url, hostCount = 32, interval = 1000 }) {
+export function createPollingSource({ profile, url, hostCount = 32, interval = 1000 }) {
   let timer = null;
   return {
     kind: 'LIVE',
@@ -77,7 +76,7 @@ export function createPollingSource({ url, hostCount = 32, interval = 1000 }) {
       const poll = async () => {
         try {
           const r = await fetch(url, { cache: 'no-store' });
-          push(normalize(await r.json(), hostCount));
+          push(normalize(await r.json(), hostCount, profile));
         } catch (e) {
           console.warn('[MARS] poll failed', e);
         }
