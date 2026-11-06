@@ -12,9 +12,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "fastapi",
-    "httpx",
+    # starlette.testclient uses httpx2 from 1.10 on (plain httpx is deprecated there). The
+    # runtime minimum stays at 0.37; only the test environment needs the newer Starlette.
+    "httpx2",
     "pytest",
     "ruff",
+    "starlette>=1.10",
 ]
 
 [project.scripts]

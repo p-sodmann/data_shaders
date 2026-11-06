@@ -12,6 +12,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    # TestClient's HTTP backend (starlette 1.10 deprecates plain httpx there); the loadgen
+    # keeps using httpx as its client
+    "httpx2",
     "pytest",
     "ruff",
 ]
