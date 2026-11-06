@@ -105,7 +105,10 @@ function binned(store, k, t0, n, step) {
 const TRIALS = [];
 for (let p = 60; p < 600; p += 5) TRIALS.push(p);
 for (let p = 600; p <= 3600; p += 15) TRIALS.push(p);
-const RHYTHM = { max: 5, minSig: 6, minAmp: 0.3 }; // minAmp in ms
+// minAmp in ms. minData: the search runs once this many seconds of the window
+// have data (a live source starts with only what its backend has kept; four
+// cycles of a 5-minute job fit), not only once the 4 h reference is half full.
+const RHYTHM = { max: 5, minSig: 6, minAmp: 0.3, minData: 1200 };
 // phase bins of about P/40, never finer than two samples
 const binsFor = (P) => Math.max(6, Math.min(40, Math.round(P / Math.max(10, P / 40))));
 
@@ -180,8 +183,9 @@ function consistency(y, t0, dt, P, B, mean, med, amp) {
   return null;
 }
 
-// subtract a centred running mean of w samples (removes slow wander)
-function highpass(x, w) {
+// subtract a centred running mean of w samples (removes slow wander); null
+// unless at least `min` samples (default: half) have data
+function highpass(x, w, min = x.length * 0.5) {
   const n = x.length, out = new Float64Array(n);
   let s = 0, c = 0, ok = 0;
   const h = w >> 1;
@@ -193,7 +197,7 @@ function highpass(x, w) {
     out[i] = x[i] === x[i] && c ? x[i] - s / c : NaN;
     if (out[i] === out[i]) ok++;
   }
-  return ok > n * 0.5 ? out : null;
+  return ok >= min && ok > 0 ? out : null;
 }
 
 function median(arr) {
@@ -206,7 +210,9 @@ export function createSignal(store, profile) {
   const SIGNALS = store.signals;
   const longP = periodsOf(LONG);
   const shortP = periodsOf(SHORT);
-  const spec = { amp: new Float32Array(LONG.bins), hold: new Float32Array(LONG.bins), live: new Float32Array(LONG.bins).fill(NaN), t: -1, peaks: [] };
+  // t: last update (-1 before the first); searched: the rhythm search has run;
+  // ref: the 4 h reference has enough data (half the window)
+  const spec = { amp: new Float32Array(LONG.bins), hold: new Float32Array(LONG.bins), live: new Float32Array(LONG.bins).fill(NaN), t: -1, peaks: [], searched: false, ref: false };
   const fall = { rows: new Uint8Array(SHORT.bins * SHORT.rows), lastRow: -1, liveT: -1, version: 0 };
   const curve = { med: new Float32Array(CURVE_BINS).fill(NaN), hi: new Float32Array(CURVE_BINS).fill(NaN), knee: null, t: -1, cloud: [] };
   const corr = { now: null, base: null, t: -1, tBase: -1 };
@@ -216,10 +222,13 @@ export function createSignal(store, profile) {
     const n = LONG.span / LONG.step;
     const t0 = Math.floor((now - LONG.span) / LONG.step) * LONG.step + LONG.step;
     const x = binned(store, LAT, t0, n, LONG.step);
+    // A station that just started (a live source) may have far less than 4 h:
+    // the reference waits for half the window, the live trace and the rhythm
+    // search don't.
     const prep = prepare(x);
-    if (!prep) return;
+    spec.ref = !!prep;
     const half = Math.sqrt(longP[0] / longP[1]); // half a bin, as a ratio
-    for (let b = 0; b < LONG.bins; b++) {
+    for (let b = 0; prep && b < LONG.bins; b++) {
       let pw = 0;
       for (const r of [1 / half, 1, half]) pw += dft(prep.y, prep.W, (longP[b] * Math.sqrt(r)) / LONG.step).amp ** 2;
       spec.amp[b] = Math.sqrt(pw / 3);
@@ -254,7 +263,7 @@ export function createSignal(store, profile) {
     const n = x.length, dt = LONG.step;
     // rhythms describe routine behaviour: leave incidents (above WARN) out
     x = x.map((v) => (v > thresh.warn ? NaN : v));
-    const hp = highpass(x, Math.round(1200 / dt));
+    const hp = highpass(x, Math.round(1200 / dt), RHYTHM.minData / dt);
     if (!hp) return [];
     // clip at 4 robust sigma: an incident should weigh no more than a scheduled bump
     const vals = [];
@@ -494,6 +503,7 @@ export function createSignal(store, profile) {
         // the rhythm search is the expensive part: once a minute of data, at most every 8 s
         if (series && (tRhythm < 0 || (now - tRhythm >= 60 && wall - wallRhythm >= 8000))) {
           spec.peaks = findRhythms(series.x, series.t0, now);
+          spec.searched = true;
           tRhythm = now;
           wallRhythm = wall;
         }

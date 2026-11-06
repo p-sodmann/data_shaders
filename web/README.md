@@ -81,7 +81,7 @@ Colour is a signal, never decoration: mint is nominal, amber is warn, orange is 
 
 ## Keys
 
-`1`–`9` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station · `B` graphite or ivory finish.
+`1`–`9` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station (live stations always run at ×1) · `B` graphite or ivory finish.
 The pointer hides after 2.5 s.
 
 ## The config document
@@ -123,6 +123,66 @@ The parameters from before the config document still work and describe one stati
 
 ## Connecting real data
 
+### Prometheus (the normal way)
+
+Instrument the service with [mars-probe](../probe/README.md), let Prometheus scrape it with the
+MARS recording rules loaded ([deploy/](../deploy/README.md) does both), and give a station
+
+```json
+{ "id": "api", "name": "API-01", "source": { "kind": "prometheus", "station": "api" } }
+```
+
+`station` is the value of the probe's `station` label. The document's `prometheus.url` (default
+`/prom`) is the API base. The Docker image and `npm run dev` both proxy `/prom` to Prometheus,
+so the browser needs no CORS. [deploy/config/mars.json](../deploy/config/mars.json) is the
+document the Docker stack serves: the two demo stations, the five standard pages for `api`, and
+a mixed page for both.
+
+When a Prometheus station starts ([src/data/prometheus/](src/data/prometheus/)):
+
+1. **Discovery.** Nodes come from `mars:node_up` (last 1 h), and routes, stages and regions from
+   the label values of `mars:endpoint_rps`, `mars:stage_mean_ms` and `mars:region_rps` (last 4 h).
+   Region codes are joined against [src/data/regions.js](src/data/regions.js) (IATA-style
+   codes). Unknown codes are skipped, with one console warning.
+2. **Tape load.** Its screens show TAPE LOAD while the station-level series are fetched for the
+   whole 4 h tape (`query_range`, 1 s steps, 1 h chunks, at most 4 at once). Per-node series
+   are fetched only for the last 10 min (what Fleet and Slices show). Routes, stages and regions
+   are live only. Other stations keep running meanwhile. If Prometheus can't be reached, the
+   screens say NO CONTACT and discovery retries.
+3. **Live.** It sends one `query {__name__=~"mars:.+",station="api"}` per second, sampled
+   requests from `query_exemplars` every 5 s, and firing alerts from `/api/v1/alerts` (those
+   with a matching `station` label) every 10 s. A firing alert lights the lamp amber and
+   shows on the Caution & Warning panel (`EXT ALERTS`), but MARS's own state is unchanged.
+4. **Almanac.** Minutes the browser doesn't hold yet (up to 30 days) are read from Prometheus
+   (`avg_over_time(…[1m])`, 60 s steps). IndexedDB is only a cache.
+
+Mapping (ADR-0003): a node is **offline** when `node_up` is 0 or missing. Otherwise it is warn
+or crit when its load passes the station's `thresh.satWarn` / `satCrit`. If a second has no
+`throughput_rps`, the target is down or unknown, and if it has no `latency_p50_ms`, there was no
+traffic. Either way nothing is written for that second, and the tape shows a gap. After 10 s
+without data the station is **STALE**: the lamp goes dark (if no other station is worse), the
+System tube says STALE, and the C&W `SOURCE AGE` row says STALE. It recovers by itself.
+
+Optional overrides in the station entry:
+
+```json
+"endpoints": [{ "route": "/v1/predict", "slo": 40 }],
+"stages": ["ingress", "auth", "embed", "infer", "rank", "egress"]
+```
+
+Without an `endpoints` entry, a route's P95 SLO is **2 × its observed 4-hour P95**, rounded. The
+contacts table marks such SLOs with `A` (for example `61A`). Without `stages`, stages are ordered
+by their usual meaning (ingress/auth first, egress last), then by name. Each stage's normal
+share of the latency is learned from its 4-hour mean.
+
+Nodes, routes, stages and regions that appear later take spare slots and show up within a
+second. If the slots run out, the station rebuilds and refills its tape
+([ADR-0007](../docs/adr/0007-runtime-entities.md)). The C&W `SLOTS USED` row shows how full they
+are. A Prometheus station's topology (Orbit) is one service, the station itself, with its
+nodes as satellites. The time base key `S` doesn't apply to it (`Time ×1 live`).
+
+### A JSON feed
+
 Give a station `"source": { "kind": "poll", "url": "/telemetry.json", "hosts": 48 }` (or use the
 old `?source=<url>`) to poll a JSON endpoint once per second ([src/data/polling.js](src/data/polling.js)):
 
@@ -136,15 +196,18 @@ old `?source=<url>`) to poll a JSON endpoint once per second ([src/data/polling.
 ```
 
 `stages`, `requests`, `endpoints`, `regions` and per-host `latency` are optional. Service names, links and pipeline stages are set in the station profile ([src/station/profile.js](src/station/profile.js)).
-The same profile sets endpoint SLOs (`endpoints`), client regions with their coordinates (`regions`) and the station's own position (`home`).
+The same profile sets endpoint SLOs (`endpoints`), client regions (`regions`, codes from [src/data/regions.js](src/data/regions.js)) and the station's own position (`home`).
 Endpoints and regions are matched by `route` / `code`, or by position in the array.
 
 `errorRate` is a fraction (0.003 = 0.3 %). Host `state` is one of `ok`, `warn`, `crit` or `offline`.
 Thresholds are the profile's `thresh`.
 
-To use another transport (WebSocket, Prometheus), write a source with the same shape:
-`{ kind, hostCount, speed, now(), setSpeed(), backfill(fromT) -> samples[], start(push), stop(), triggerIncident() }`.
-If `backfill` returns history (for example from a Prometheus range query), the archive is full on boot.
+### Another transport
+
+Write a source with the shape
+`{ kind, hostCount, speed, now(), setSpeed(), backfill(fromT, progress?, store?) -> Promise<samples[]>, start(push, store?), stop(), triggerIncident() }`
+and add it to [src/station/station.js](src/station/station.js). The station waits for `backfill`
+(its screens show TAPE LOAD) and ingests what it returns before it calls `start`.
 
 ## Architecture
 

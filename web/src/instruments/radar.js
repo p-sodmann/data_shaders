@@ -1,4 +1,5 @@
 import { PH, STATE_COLORS } from '../gl/palette.js';
+import { routeLabel } from '../data/telemetry.js';
 
 // 14 PROXIMITY: a PPI radar scope with one contact per endpoint. Bearing is
 // fixed per endpoint; range is headroom. A contact at the rim is idle, one on
@@ -26,10 +27,10 @@ const RINGS = [
 
 export function createRadar(station, options = {}) {
   const { store } = station;
-  const n = store.endpoints.length;
-  const bearing = store.endpoints.map((_, i) => ((i + 0.35) / n) * TAU);
-  const echoes = store.endpoints.map(() => []);
-  const lastTurn = new Float64Array(n).fill(NaN);
+  // A discovered station may gain endpoints while it runs (ADR-0007), so the
+  // bearings follow the table's length; echoes are kept per route.
+  const echoesOf = new Map();
+  const lastTurnOf = new Map();
 
   return {
     crt: { curve: 0.035, scan: 0.75, bloom: 1.1, decay: 0.9 },
@@ -79,21 +80,25 @@ export function createRadar(station, options = {}) {
 
       // contacts
       const eps = store.endpoints;
+      const n = eps.length;
       let nearest = null, closing = 0, over = 0, live = 0;
       eps.forEach((ep, i) => {
         if (!ep.live) return;
+        if (!echoesOf.has(ep.route)) echoesOf.set(ep.route, []);
+        const echoList = echoesOf.get(ep.route);
+        const bearingI = ((i + 0.35) / n) * TAU;
         live++;
         if (ep.trend > 0.002) closing++;
         if (ep.state === 2) over++;
         if (!nearest || ep.pressure > nearest.pressure) nearest = ep;
-        const k = Math.floor(turn - bearing[i] / TAU);
-        if (k !== lastTurn[i]) {
-          lastTurn[i] = k;
-          echoes[i].push({ r: rangeOf(ep.pressure), t: now, state: ep.state, rps: ep.rps });
-          if (echoes[i].length > ECHOES) echoes[i].shift();
+        const k = Math.floor(turn - bearingI / TAU);
+        if (k !== lastTurnOf.get(ep.route)) {
+          lastTurnOf.set(ep.route, k);
+          echoList.push({ r: rangeOf(ep.pressure), t: now, state: ep.state, rps: ep.rps });
+          if (echoList.length > ECHOES) echoList.shift();
         }
-        const list = echoes[i];
-        const b = bearing[i];
+        const list = echoList;
+        const b = bearingI;
         const size = 0.035 + 0.06 * Math.sqrt(Math.min(1, ep.share * 2.2));
         list.forEach((e, j) => {
           const age = (now - e.t) / PERIOD;
@@ -120,7 +125,7 @@ export function createRadar(station, options = {}) {
           v.line(bx, by, lx, ly, c, 0.18 + 0.3 * glow, 0.45);
         }
         const right = Math.sin(b) >= -0.2;
-        const label = ep.route.replace('/v1/', '/');
+        const label = routeLabel(ep.route).replace('/v1/', '/');
         const tx = right ? lx + 7 : lx - 7 - v.textWidth(label, 1.3);
         v.text(tx, ly - 11, label, c, (ep.state ? 0.55 : 0.25) + 0.5 * glow, 1.3);
       });
@@ -136,7 +141,7 @@ export function createRadar(station, options = {}) {
       if (nearest) {
         const head = Math.round((1 - nearest.pressure) * 100);
         rows.push(['NEAREST', null]);
-        rows.push([nearest.route, STATE_COLORS[nearest.state], 1]);
+        rows.push([routeLabel(nearest.route), STATE_COLORS[nearest.state], 1]);
         rows.push([head >= 0 ? `HEADROOM ${head}%` : `OVER ${-head}%`, STATE_COLORS[nearest.state], 0.9]);
         rows.push(['', null]);
       }
@@ -149,7 +154,7 @@ export function createRadar(station, options = {}) {
       } else {
         if (nearest) {
           const head = Math.round((1 - nearest.pressure) * 100);
-          v.text(lx, 12, `NEAREST ${nearest.route}`, STATE_COLORS[nearest.state], 0.85, 1.4);
+          v.text(lx, 12, `NEAREST ${routeLabel(nearest.route)}`, STATE_COLORS[nearest.state], 0.85, 1.4);
           v.text(lx, 26, head >= 0 ? `HEADROOM ${head}%` : `OVER ${-head}%`, STATE_COLORS[nearest.state], 0.7, 1.4);
         }
         const s = over ? `OVER SLO ${over}` : `CLOSING ${closing}`;

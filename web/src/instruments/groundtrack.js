@@ -20,7 +20,12 @@ const fmtLon = (lon) => `${Math.abs(lon).toFixed(0).padStart(3, '0')}${lon < 0 ?
 export function createGroundTrack(station, options = {}) {
   const { store } = station;
   const { home } = station.profile;
-  const arcs = store.regions.map((rg) => greatCircle(rg.lat, rg.lon, home.lat, home.lon, 64));
+  // per region code: a discovered station may gain regions while it runs
+  const arcs = new Map();
+  const arcOf = (rg) => {
+    if (!arcs.has(rg.code)) arcs.set(rg.code, greatCircle(rg.lat, rg.lon, home.lat, home.lon, 64));
+    return arcs.get(rg.code);
+  };
   const cellLat = Array.from({ length: LAND.rows }, (_, r) => (LAND.lat0 - (r + 0.5) * LAND.step) * R);
   const cellLon = Array.from({ length: LAND.cols }, (_, c) => (LAND.lon0 + (c + 0.5) * LAND.step) * R);
 
@@ -87,7 +92,7 @@ export function createGroundTrack(station, options = {}) {
       const total = regs.reduce((a, rg) => a + (rg.live ? rg.rps : 0), 0) || 1;
       regs.forEach((rg, i) => {
         if (!rg.live) return;
-        const pts = arcs[i];
+        const pts = arcOf(rg);
         const c = STATE_COLORS[rg.state];
         const share = rg.rps / total;
         const xy = pts.map(([la, lo]) => [px(lo), py(la), lo]);

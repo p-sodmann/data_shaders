@@ -1,3 +1,5 @@
+import { REGIONS } from '../data/regions.js';
+
 // A station profile: everything that describes one monitored system rather
 // than the device (thresholds, SLO, topology, endpoints, regions). Several
 // stations each carry their own, so nothing here is a module global any more.
@@ -57,20 +59,11 @@ const DEFAULTS = {
   epErrBudget: 0.01, // error fraction that counts as "at the limit"
 
   // Where clients connect from: [code, name, lat, lon, share of traffic].
+  // Names and positions come from the shared table (data/regions.js).
   regions: [
-    ['IAD', 'US EAST', 38.9, -77.4, 0.2],
-    ['SFO', 'US WEST', 37.6, -122.4, 0.12],
-    ['MEX', 'MEXICO', 19.4, -99.1, 0.04],
-    ['GRU', 'BRAZIL', -23.4, -46.5, 0.05],
-    ['LHR', 'UK', 51.5, -0.5, 0.12],
-    ['MAD', 'IBERIA', 40.5, -3.6, 0.06],
-    ['JNB', 'S AFRICA', -26.1, 28.2, 0.02],
-    ['DXB', 'GULF', 25.3, 55.4, 0.04],
-    ['BOM', 'INDIA', 19.1, 72.9, 0.08],
-    ['SIN', 'SE ASIA', 1.4, 103.99, 0.09],
-    ['NRT', 'JAPAN', 35.8, 140.4, 0.13],
-    ['SYD', 'AUSTRALIA', -33.9, 151.2, 0.05],
-  ],
+    ['IAD', 0.2], ['SFO', 0.12], ['MEX', 0.04], ['GRU', 0.05], ['LHR', 0.12], ['MAD', 0.06],
+    ['JNB', 0.02], ['DXB', 0.04], ['BOM', 0.08], ['SIN', 0.09], ['NRT', 0.13], ['SYD', 0.05],
+  ].map(([code, share]) => [code, ...REGIONS[code], share]),
 };
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

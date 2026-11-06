@@ -2,20 +2,26 @@ import { createStation } from './station.js';
 
 // Keeps one running station per entry of the document's `stations`.
 //
-// sync(defs) diffs by id: new ids are created and started, missing ids are
+// sync(defs, ctx) diffs by id: new ids are created and started, missing ids are
 // stopped (which saves and closes their almanac), and an entry that changed in
 // any way is replaced by a new station. A profile is frozen and instruments copy
 // what they need when they are built, so there is nothing to patch in place;
 // panels bound to a replaced station rebuild because the station object changed.
+// ctx is { prometheus: base URL } from the document; a Prometheus station is
+// also replaced when it changes.
 //
-// Source kinds that this build can't run yet (prometheus, step 07) get no
-// station, so their panels show NO SIGNAL.
+// Stations start asynchronously and each on its own (station.js). When one
+// changes phase or is rebuilt, the snapshot is renewed, so React re-reads
+// stores that may have been swapped.
+//
+// Source kinds this build can't run get no station, so their panels show NO SIGNAL.
 
-const RUNNABLE = new Set(['sim', 'poll']);
-const SEV = { NOMINAL: 0, DEGRADED: 1, INCIDENT: 2 };
+const RUNNABLE = new Set(['sim', 'poll', 'prometheus']);
+// STALE sits between nominal and degraded: worth a look, not an alarm
+const SEV = { NOMINAL: 0, STALE: 0.5, DEGRADED: 1, INCIDENT: 2 };
 
 export function createStationManager({ create = createStation } = {}) {
-  let entries = new Map(); // id → { key, station }
+  let entries = new Map(); // id → { key, station, off }
   let snapshot = { list: Object.freeze([]), byId: Object.freeze({}) };
   const listeners = new Set();
   const skipped = new Set();
@@ -29,7 +35,13 @@ export function createStationManager({ create = createStation } = {}) {
     },
   });
 
-  function sync(defs) {
+  function publish() {
+    const list = [...entries.values()].map((e) => e.station);
+    snapshot = { list: Object.freeze(list), byId: Object.freeze(Object.fromEntries(list.map((s) => [s.id, s]))) };
+    listeners.forEach((fn) => fn());
+  }
+
+  function sync(defs, ctx = {}) {
     const next = new Map();
     let changed = false;
     for (const def of defs) {
@@ -39,19 +51,27 @@ export function createStationManager({ create = createStation } = {}) {
         continue;
       }
       skipped.delete(def.id);
-      const key = JSON.stringify(def);
+      const key = JSON.stringify(def.source.kind === 'prometheus' ? [def, ctx.prometheus] : def);
       const old = entries.get(def.id);
       if (old && old.key === key) {
         next.set(def.id, old);
         continue;
       }
-      const station = create(def);
-      station.start();
-      next.set(def.id, { key, station });
+      const station = create(def, ctx);
+      // a station whose phase or tables change may have a new store
+      let last = station.getStatus?.();
+      const off = station.subscribe?.(() => {
+        const st = station.getStatus();
+        if (st.phase !== last?.phase || st.generation !== last?.generation) publish();
+        last = st;
+      });
+      Promise.resolve(station.start()).catch((e) => console.error(`[MARS] station "${def.id}" failed to start`, e));
+      next.set(def.id, { key, station, off });
       changed = true;
     }
-    for (const [id, { station }] of entries) {
+    for (const [id, { station, off }] of entries) {
       if (next.get(id)?.station !== station) {
+        off?.();
         station.stop();
         changed = true;
       }
@@ -60,11 +80,7 @@ export function createStationManager({ create = createStation } = {}) {
     const order = (m) => [...m.keys()].join('\0');
     if (order(next) !== order(entries)) changed = true;
     entries = next;
-    if (changed) {
-      const list = [...entries.values()].map((e) => e.station);
-      snapshot = { list: Object.freeze(list), byId: Object.freeze(Object.fromEntries(list.map((s) => [s.id, s]))) };
-      listeners.forEach((fn) => fn());
-    }
+    if (changed) publish();
   }
 
   return {
@@ -78,7 +94,10 @@ export function createStationManager({ create = createStation } = {}) {
       return () => listeners.delete(fn);
     },
     dispose() {
-      for (const { station } of entries.values()) station.stop();
+      for (const { station, off } of entries.values()) {
+        off?.();
+        station.stop();
+      }
       entries = new Map();
       snapshot = { list: Object.freeze([]), byId: Object.freeze({}) };
       listeners.forEach((fn) => fn());
@@ -86,12 +105,13 @@ export function createStationManager({ create = createStation } = {}) {
   };
 }
 
-// The station in the worst state; the first one in document order on a tie,
+// The station in the worst state (store.status, so STALE and external alerts
+// count); the first one in document order on a tie,
 // so the readout doesn't flicker between equals. null when there are none.
 export function worstStation(stations) {
   let worst = null;
   for (const s of stations) {
-    if (!worst || (SEV[s.store.state] ?? 0) > (SEV[worst.store.state] ?? 0)) worst = s;
+    if (!worst || (SEV[s.store.status] ?? 0) > (SEV[worst.store.status] ?? 0)) worst = s;
   }
   return worst;
 }

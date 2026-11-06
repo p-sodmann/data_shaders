@@ -234,8 +234,8 @@ export function createSimulator({ profile, hostCount = 32, seed = Date.now() }) 
   return { step, triggerIncident: (t) => startIncident(t, 1) };
 }
 
-// Source contract (see README): { kind, hostCount, speed, now(), setSpeed(),
-// backfill(fromT) -> samples[], start(push), stop(), triggerIncident() }
+// Source contract (see station.js): { kind, hostCount, speed, now(), setSpeed(),
+// backfill(fromT) -> Promise<samples[]>, start(push), stop(), triggerIncident() }
 // `seed` fixes the random sequence so two sim stations differ; without one
 // every boot draws a fresh cluster, as before.
 export function createSimulatedSource({ profile, hostCount = 32, speed = 1, seed }) {
@@ -274,12 +274,13 @@ export function createSimulatedSource({ profile, hostCount = 32, speed = 1, seed
       sp = v;
       schedule();
     },
+    // computed at once; a promise only because other sources fetch theirs
     backfill(from) {
       const out = [];
       const end = Math.floor(now());
       for (let t = Math.floor(from); t < end; t++) out.push(sim.step(t));
       nextT = end;
-      return out;
+      return Promise.resolve(out);
     },
     start(fn) {
       push = fn;

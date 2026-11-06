@@ -164,6 +164,11 @@ body.idle, body.idle * { cursor: none !important; }
   background: radial-gradient(circle at 38% 32%, #ffe6b5, #ffaa2e 50%, #6e420b);
   box-shadow: 0 0 0 0.4vmin var(--bezel), 0 0 0 calc(0.4vmin + 1px) var(--rule), 0 0 2vmin rgba(255, 170, 50, 0.6);
 }
+/* no data: the lamp is dark, which reads as "no information", not as an alarm */
+.lamp.STALE {
+  background: radial-gradient(circle at 38% 32%, #3a4a41, #1b2520 50%, #0b100d);
+  box-shadow: 0 0 0 0.4vmin var(--bezel), 0 0 0 calc(0.4vmin + 1px) var(--rule);
+}
 .lamp.INCIDENT {
   background: radial-gradient(circle at 38% 32%, #ffd6bd, var(--signal) 50%, #6d1a04);
   box-shadow: 0 0 0 0.4vmin var(--bezel), 0 0 0 calc(0.4vmin + 1px) var(--rule), 0 0 3vmin rgba(255, 90, 31, 0.85);

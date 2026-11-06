@@ -24,13 +24,15 @@ Open <http://localhost:8080>. After about 15 s the recording rules have data:
 curl -s localhost:8080/prom/api/v1/query --data-urlencode 'query=mars:throughput_rps'
 ```
 
-The display still runs on its simulator until the Prometheus source lands (step 07); until then
-use Prometheus's own UI on <http://localhost:9090> to look at the `mars:*` series.
+The display loads [config/mars.json](config/mars.json): both demo stations read from Prometheus,
+the five standard pages for `api` and a mixed page 6 for both. On a reload the tape is filled
+from Prometheus for as long as the stack has run (up to 4 h).
+
 
 Things to try:
 
 ```bash
-docker compose -f deploy/compose.yaml stop demo-search     # mars:node_up{station="search"} → 0
+docker compose -f deploy/compose.yaml stop demo-search     # its node lamp goes offline, then STALE after 10 s
 docker compose -f deploy/compose.yaml start demo-search
 docker compose -f deploy/compose.yaml exec demo-api python -c "import urllib.request as u; \
   u.urlopen(u.Request('http://localhost:8000/_chaos', b'{\"error_rate\": 0.2}', \
@@ -70,10 +72,11 @@ Check <http://localhost:9090/targets>: the target should be `UP`, and
   only copy ([ADR-0003](../docs/adr/0003-metric-contract.md)). After editing them, reload
   without a restart: `curl -X POST localhost:9090/-/reload`.
 - [config/](config/): mounted at `/config` in the `mars` container and served at
-  `localhost:8080/config/` without caching. Put a config document there as `mars.json`
-  ([ADR-0005](../docs/adr/0005-config-document.md); example in
-  [web/public/examples/two-stations.json](../web/public/examples/two-stations.json)) and every
-  display without its own saved copy loads it. `/config/` itself answers 404 (no listing).
+  `localhost:8080/config/` without caching. [config/mars.json](config/mars.json) is the
+  document for the demo stations ([ADR-0005](../docs/adr/0005-config-document.md)). Edit it
+  or replace it with your own stations (`{ "kind": "prometheus", "station": "<label>" }`), and
+  every display without its own saved copy loads it. A display that has saved a document in
+  localStorage keeps using that one. `/config/` itself answers 404 (no listing).
 
 ## Ports and exposure
 

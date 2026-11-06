@@ -1,0 +1,462 @@
+{
+  "version": 1,
+  "device": {
+    "finish": "graphite",
+    "fps": 60,
+    "dpr": 2,
+    "cycle": 0,
+    "locked": false
+  },
+  "prometheus": {
+    "url": "/prom"
+  },
+  "stations": [
+    {
+      "id": "api",
+      "name": "API-01",
+      "source": {
+        "kind": "prometheus",
+        "station": "api"
+      },
+      "endpoints": [
+        {
+          "route": "/v1/predict",
+          "slo": 40
+        }
+      ],
+      "stages": [
+        "ingress",
+        "auth",
+        "embed",
+        "infer",
+        "rank",
+        "egress"
+      ]
+    },
+    {
+      "id": "search",
+      "name": "SEARCH-01",
+      "source": {
+        "kind": "prometheus",
+        "station": "search"
+      },
+      "thresh": {
+        "warn": 40,
+        "crit": 55,
+        "max": 80
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "tape",
+      "name": "Tape",
+      "panels": [
+        {
+          "id": "tape",
+          "type": "tape",
+          "station": "api",
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "load",
+          "type": "meter",
+          "station": "api",
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "nodes",
+          "type": "matrix",
+          "station": "api",
+          "x": 8,
+          "y": 3,
+          "w": 4,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "latency",
+          "type": "readout",
+          "station": "api",
+          "x": 0,
+          "y": 6,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "latency"
+          }
+        },
+        {
+          "id": "throughput",
+          "type": "readout",
+          "station": "api",
+          "x": 2,
+          "y": 6,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "throughput"
+          }
+        },
+        {
+          "id": "errors",
+          "type": "readout",
+          "station": "api",
+          "x": 4,
+          "y": 6,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "errors"
+          }
+        },
+        {
+          "id": "log",
+          "type": "log",
+          "station": "api",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "orbit",
+      "name": "Orbit",
+      "panels": [
+        {
+          "id": "orbit",
+          "type": "orbit",
+          "station": "api",
+          "x": 0,
+          "y": 0,
+          "w": 7,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "fleet",
+          "type": "fleet",
+          "station": "api",
+          "x": 7,
+          "y": 0,
+          "w": 5,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "pipeline",
+          "type": "pipeline",
+          "station": "api",
+          "x": 0,
+          "y": 6,
+          "w": 5,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "slices",
+          "type": "slices",
+          "station": "api",
+          "x": 7,
+          "y": 3,
+          "w": 5,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "rules",
+          "type": "rules",
+          "station": "api",
+          "x": 5,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "trace",
+          "type": "trace",
+          "station": "api",
+          "x": 9,
+          "y": 6,
+          "w": 3,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "sweep",
+      "name": "Sweep",
+      "panels": [
+        {
+          "id": "radar",
+          "type": "radar",
+          "station": "api",
+          "x": 0,
+          "y": 0,
+          "w": 5,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "ground",
+          "type": "ground",
+          "station": "api",
+          "x": 5,
+          "y": 0,
+          "w": 7,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "contacts",
+          "type": "contacts",
+          "station": "api",
+          "x": 0,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "origins",
+          "type": "origins",
+          "station": "api",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "signal",
+      "name": "Signal",
+      "panels": [
+        {
+          "id": "spectrum",
+          "type": "spectrum",
+          "station": "api",
+          "x": 0,
+          "y": 0,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "waterfall",
+          "type": "waterfall",
+          "station": "api",
+          "x": 0,
+          "y": 3,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "xy",
+          "type": "xy",
+          "station": "api",
+          "x": 7,
+          "y": 0,
+          "w": 5,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "correlator",
+          "type": "correlator",
+          "station": "api",
+          "x": 0,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "rhythms",
+          "type": "rhythms",
+          "station": "api",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "almanac",
+      "name": "Almanac",
+      "panels": [
+        {
+          "id": "dial",
+          "type": "dial",
+          "station": "api",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "heatmap",
+          "type": "heatmap",
+          "station": "api",
+          "x": 4,
+          "y": 0,
+          "w": 8,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "budget",
+          "type": "budget",
+          "station": "api",
+          "x": 0,
+          "y": 6,
+          "w": 3,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "burn",
+          "type": "burn",
+          "station": "api",
+          "x": 3,
+          "y": 6,
+          "w": 5,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "logbook",
+          "type": "logbook",
+          "station": "api",
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "twin",
+      "name": "Twin",
+      "panels": [
+        {
+          "id": "tape-api",
+          "type": "tape",
+          "station": "api",
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "tape-search",
+          "type": "tape",
+          "station": "search",
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "lat-api",
+          "type": "readout",
+          "station": "api",
+          "x": 0,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "latency"
+          }
+        },
+        {
+          "id": "tp-api",
+          "type": "readout",
+          "station": "api",
+          "x": 2,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "throughput"
+          }
+        },
+        {
+          "id": "lat-search",
+          "type": "readout",
+          "station": "search",
+          "x": 4,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "latency"
+          }
+        },
+        {
+          "id": "tp-search",
+          "type": "readout",
+          "station": "search",
+          "x": 6,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "throughput"
+          }
+        },
+        {
+          "id": "pipeline-search",
+          "type": "pipeline",
+          "station": "search",
+          "x": 8,
+          "y": 4,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "log",
+          "type": "log",
+          "station": "*",
+          "x": 0,
+          "y": 6,
+          "w": 8,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "rules-search",
+          "type": "rules",
+          "station": "search",
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    }
+  ]
+}

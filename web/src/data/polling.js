@@ -70,7 +70,7 @@ export function createPollingSource({ profile, url, hostCount = 32, interval = 1
     speed: 1,
     now: () => Date.now() / 1000,
     setSpeed() {},
-    backfill: () => [],
+    backfill: () => Promise.resolve([]), // the feed has no history
     triggerIncident() {},
     start(push) {
       const poll = async () => {

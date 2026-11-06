@@ -1,6 +1,6 @@
 # ADR-0005: Stations and layout live in one config document
 
-Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order)
+Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides)
 
 ## Context
 
@@ -44,6 +44,11 @@ One JSON document (a "cartridge") describes the device. It is validated with **z
   `slo`, `home`). Defaults come from today's `config.js` values. Endpoints, stages, regions
   and nodes are **discovered** for Prometheus stations and taken from the built-in tables for
   `sim` and `poll`.
+- Prometheus stations take two more overrides, which other kinds ignore *(added in step 07)*:
+  `endpoints: [{ route, slo }]` (P95 SLO in ms for a route, listed even before it has
+  traffic; without it a route's SLO is 2 × its observed 4-hour P95, rounded) and
+  `stages: ["ingress", …]` (pipeline order; stages not listed follow, ordered by name).
+  Entities that appear later fill spare slots ([ADR-0007](0007-runtime-entities.md)).
 - **Source kinds:** `{ kind: "sim", hosts, seed?, speed? }`,
   `{ kind: "prometheus", station }` and `{ kind: "poll", url, hosts }`. `poll` is a custom JSON
   endpoint polled once per second (the payload in `web/README.md`), so feeds that don't go

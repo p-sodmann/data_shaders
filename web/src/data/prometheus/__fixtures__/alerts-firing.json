@@ -1,0 +1,5 @@
+{"status":"success","data":{"alerts":[
+{"labels":{"alertname":"HighLatency","severity":"warning","station":"api"},"annotations":{"summary":"hand-written: the demo stack has no alert rules"},"state":"firing","activeAt":"2026-11-06T15:00:00Z","value":"4.2e+01"},
+{"labels":{"alertname":"DiskFull","station":"api"},"annotations":{},"state":"pending","activeAt":"2026-11-06T15:01:00Z","value":"9.5e-01"},
+{"labels":{"alertname":"SearchDown","station":"search"},"annotations":{},"state":"firing","activeAt":"2026-11-06T15:02:00Z","value":"1e+00"}
+]}}

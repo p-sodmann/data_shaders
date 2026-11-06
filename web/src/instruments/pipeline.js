@@ -7,8 +7,7 @@ import { PH, STATE_COLORS } from '../gl/palette.js';
 
 export function createPipeline(station, options = {}) {
   const { store } = station;
-  const { thresh, stages, stageShare } = station.profile;
-  const S = stages.length;
+  const { thresh } = station.profile;
   const parts = [];
   let spawn = 0;
   let seed = 1;
@@ -23,7 +22,15 @@ export function createPipeline(station, options = {}) {
       const W = v.w, H = v.h, t = f.time;
       const dt = f.dt;
       const latest = store.latest;
-      const stage = store.stageLatency ?? stageShare.map((s) => s * (latest?.latency ?? 10));
+      // the store's tables: a discovered station may gain a stage while it runs
+      const { stages, stageShare } = store;
+      const S = stages.length;
+      if (S < 2) {
+        const msg = S ? stages[0].toUpperCase() : 'NO STAGES REPORTED';
+        v.text((W - v.textWidth(msg, 1.6)) / 2, H / 2 - 5, msg, PH.ok, 0.5, 1.6);
+        return;
+      }
+      const stage = store.stageLatency?.length === S ? store.stageLatency : stageShare.map((s) => s * (latest?.latency ?? 10));
       const total = stage.reduce((a, b) => a + b, 0) || 1;
       const ratio = stage.map((ms, k) => ms / total / stageShare[k]);
       const level = ratio.map((r) => (r > 3 ? 2 : r > 1.8 ? 1 : 0));
@@ -57,7 +64,7 @@ export function createPipeline(station, options = {}) {
             v.line(a[0], a[1], b[0], b[1], c, 0.22, 0.45);
           }
         }
-        const name = stages[k];
+        const name = stages[k].toUpperCase();
         v.text(x - v.textWidth(name, 1.45) / 2, cy + ph / 2 + 8, name, level[k] ? c : PH.ok, level[k] ? 0.9 : 0.45, 1.45);
         const ms = stage[k].toFixed(1);
         v.text(x - v.textWidth(ms, 1.45) / 2, cy + ph / 2 + 22, ms, c, 0.8, 1.45);
@@ -97,7 +104,7 @@ export function createPipeline(station, options = {}) {
       v.text(L - 20, 8, `${Math.round(tp)} REQ/S`, PH.ok, 0.45, 1.45);
       const slow = level.indexOf(Math.max(...level));
       if (level[slow] > 0) {
-        const msg = `BOTTLENECK ${stages[slow]} X${ratio[slow].toFixed(1)}`;
+        const msg = `BOTTLENECK ${stages[slow].toUpperCase()} X${ratio[slow].toFixed(1)}`;
         v.text(R - v.textWidth(msg, 1.45), 8, msg, STATE_COLORS[level[slow]], 0.9, 1.45);
       }
     },

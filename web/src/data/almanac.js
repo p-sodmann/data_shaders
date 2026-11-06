@@ -70,17 +70,34 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
     acc.st = Math.max(acc.st, SEV[state] ?? 0);
   }
 
-  // fill empty minutes in [from, to) from a generator (simulated past)
-  function synthesize(from, to, gen) {
+  // Fill empty minutes from records [{ mi, latency, errorRate, throughput,
+  // saturation }] (a backend's history); minutes this device already holds
+  // stay as they are. The state of a minute comes from the thresholds, since
+  // the record has no hysteresis behind it. Returns how many were written.
+  function fill(records) {
     let n = 0;
-    for (let mi = from; mi < to; mi++) {
+    for (const x of records) {
+      const mi = x.mi;
       if (m[slotOf(mi)] === mi) continue;
-      const x = gen(mi);
       const s = x.latency > thresh.crit || x.errorRate > thresh.errCrit ? 2 : x.latency > thresh.warn || x.errorRate > thresh.errWarn ? 1 : 0;
       write(mi, { lat: x.latency, err: x.errorRate, tp: x.throughput, sat: x.saturation, st: s });
       n++;
     }
     if (n) version++;
+    return n;
+  }
+
+  // fill empty minutes in [from, to) from a generator (simulated past)
+  function synthesize(from, to, gen) {
+    const records = [];
+    for (let mi = from; mi < to; mi++) if (m[slotOf(mi)] !== mi) records.push({ mi, ...gen(mi) });
+    return fill(records);
+  }
+
+  // the first minute in [from, to) this device holds nothing for, or -1
+  function firstGap(from, to) {
+    for (let mi = from; mi < to; mi++) if (m[slotOf(mi)] !== mi) return mi;
+    return -1;
   }
 
   // ---------- persistence ----------
@@ -246,7 +263,9 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
       return lastMin;
     },
     add,
+    fill,
     synthesize,
+    firstGap,
     load,
     save,
     analyse,

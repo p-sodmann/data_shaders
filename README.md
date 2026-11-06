@@ -54,7 +54,9 @@ Open <http://localhost:8080>. Prometheus is on <http://localhost:9090> (this mac
 Without `--profile demo` only MARS and Prometheus start, for your own servers. Adding a
 server, ports and troubleshooting are in [deploy/README.md](deploy/README.md).
 
-The display still runs on its simulator; reading Prometheus arrives in step 07.
+The display reads both demo stations from Prometheus ([deploy/config/mars.json](deploy/config/mars.json)):
+pages 1–5 are the standard pages for `api`, page 6 shows both stations. Without Docker,
+`cd web && npm run dev` runs on the built-in simulator.
 
 ## Docs
 

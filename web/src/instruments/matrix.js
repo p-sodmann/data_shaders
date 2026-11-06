@@ -78,7 +78,8 @@ export function createMatrix(station, options = {}) {
     },
     update(gl, _state, f) {
       const n = store.hostCount;
-      const [cols, rows] = gridFor(n, f.w / f.h);
+      // a station may have no nodes yet (still discovering): keep one dark cell
+      const [cols, rows] = gridFor(Math.max(1, n), f.w / f.h);
       if (buf.length !== cols * rows * 4) buf = new Uint8Array(cols * rows * 4);
       buf.fill(0);
       for (let i = 0; i < n; i++) {

@@ -15,8 +15,12 @@ export async function boot() {
   const docStore = createDocStore({ doc, origin });
   const manager = createStationManager();
   // subscribed before React, so stations are in place when the page re-renders
-  docStore.subscribe(() => manager.sync(docStore.getDoc().stations));
-  manager.sync(docStore.getDoc().stations);
+  const sync = () => {
+    const d = docStore.getDoc();
+    manager.sync(d.stations, { prometheus: d.prometheus?.url ?? '/prom' });
+  };
+  docStore.subscribe(sync);
+  sync();
 
   // Debug handle for the devtools console, e.g.
   //   __mars.setDoc((d) => ({ ...d, stations: [...d.stations, { id: 'b', name: 'B-01', source: { kind: 'sim', seed: 3 } }] }))

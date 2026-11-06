@@ -29,6 +29,35 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   `DEGRADED · <NAME>` and shrinks its dots to fit (names up to 24 characters). At 24 characters
   the dots get small. Cap displayed names, widen the tube, or scroll?
 
+## Prometheus source
+
+- **Nodes that go away stay offline (step 07).** A node that leaves Prometheus keeps its slot
+  and shows as offline, so a scale-down counts as NODES DOWN on the C&W panel until a reload
+  ([ADR-0007](adr/0007-runtime-entities.md)). Should a slot retire after some time without
+  `mars:node_up` (say 15 min), or should a removed file_sd target count as intentional?
+- **Stage order isn't in the metrics (step 07).** Exemplars belong to requests, not stages,
+  so "first appearance in a trace" can't be read. Without a `stages` override the order comes
+  from the stage names (ingress/auth first, egress last, the rest by name). Should the probe
+  export the order, for example `mars_stage_info{stage, order}` (an ADR-0003 change)?
+- **External alerts without a `station` label (step 07).** Only firing alerts whose `station`
+  label matches light that station's lamp. Should alerts without the label light the device
+  lamp?
+- **Almanac error rate from Prometheus (step 07).** Minutes read from Prometheus use
+  `avg_over_time(mars:error_ratio[1m])`, which isn't weighted by throughput as the live minutes
+  are. The difference is small at steady traffic. Is it worth a recording rule for
+  `sum(rate(...5xx))` / `sum(rate(...))` over 1 m?
+- **Auto SLOs of small, fast routes flap (step 07).** 2 × the observed 4-hour P95 gives
+  `/v1/models` in the demo an SLO of 10 ms, and its P95 over a 10 s window comes from about
+  20 requests, so it swings between CLOSING and OVER SLO and fills the event log. Should auto
+  SLOs have a floor (for example the station's `thresh.warn`), or should endpoint state need a
+  minimum request rate?
+- **Rhythms can't see the demo's batch job (step 07).** The 5-minute `/v1/rank` batch shows in
+  throughput (+20–25 % for ~20 s) but not in P50 latency, and the rhythm search folds latency
+  only. On 25 min of continuous real data the latency fold at 300 s had no batch bump, and no
+  rhythm was found. Should the analyser also fold throughput (and report which signal a rhythm
+  is in), or should the demo's batch job load latency (for example, longer `rank` work per
+  batch request)? Step 07's criterion "Rhythms finds the 5-minute batch job" waits on this.
+
 ## Resolved
 
 Decided in one review session on 2026-11-06. "→ step N" is where the decision gets built.
@@ -51,22 +80,27 @@ Decided in one review session on 2026-11-06. "→ step N" is where the decision 
   since a two-station config replaces it. Removed in step 06, 2026-11-06
   (`?config=/examples/two-stations.json` replaces it).
 - **One Prometheus for all servers:** yes, a single `PROMETHEUS_URL`. More servers are scraped by
-  that Prometheus, or remote-write into it. No per-station backend field. → step 07.
+  that Prometheus, or remote-write into it. No per-station backend field. Built in step 07: every
+  Prometheus station uses the document's `prometheus.url`, 2026-11-06.
 - **Scrape interval:** 5 s by default, 1 s for the demo jobs so the Signal page stays meaningful.
   Revisit once real series counts are known. → step 03 follow-up.
 - **Routes, stages, regions or nodes that appear at runtime:** the telemetry store reserves spare
   slots and fills them as new labels appear, keeping short-term state. It rebuilds only when the
-  slots run out, and an overflow lamp shows when that happens. → step 07.
+  slots run out, and an overflow lamp shows when that happens. Built in step 07
+  ([ADR-0007](adr/0007-runtime-entities.md)); the lamp is the C&W `SLOTS USED` row, 2026-11-06.
 - **Node semantics for a single uvicorn process:** per-station instruments stay honest (one
   lamp). The cross-station board shows one lamp per station. Database layers may fill the grid
   later (see "Database layers" above). → step 10.
 - **Almanac source:** backfill from Prometheus (`query_range`, `step=60s`, 30 days) on first load
-  and after gaps. IndexedDB becomes a cache. → step 07.
+  and after gaps. IndexedDB becomes a cache. Built in step 07: only the minutes IndexedDB
+  doesn't hold are read, 2026-11-06.
 - **Alert rules:** both. MARS's own caution and warning rules drive the lamps by default, and
   firing Prometheus alerts (`/api/v1/alerts`) also light the warning lamp, labelled as external.
-  → step 07.
+  Built in step 07: alerts with a matching `station` label, polled every 10 s, shown as
+  `EXT ALERTS` on the C&W panel and logged as `EXT ALERT … FIRING`, 2026-11-06.
 - **Time base:** `S` (×10, ×60) works only for `sim`/demo stations and does nothing on
-  Prometheus stations. → step 07.
+  Prometheus stations. Built in step 07 (the key reads `Time ×1 live` without sim stations),
+  2026-11-06.
 - **Exposure:** LAN-only by default. Setting `MARS_BASIC_AUTH` turns on Caddy `basic_auth` for
   everything, `/prom` included. → step 12.
 - **Lifecycle API:** keep `--web.enable-lifecycle`. Caddy already refuses `/-/reload` and

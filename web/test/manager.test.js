@@ -12,8 +12,8 @@ describe('station manager', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     created = [];
     manager = createStationManager({
-      create: (def) => {
-        const s = createStation(def);
+      create: (def, ctx) => {
+        const s = createStation(def, ctx);
         vi.spyOn(s, 'stop');
         created.push(s);
         return s;
@@ -26,9 +26,13 @@ describe('station manager', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates and starts a station per entry, in document order', () => {
+  it('creates and starts a station per entry, in document order', async () => {
     manager.sync([sim('a'), sim('b')]);
     expect(manager.list().map((s) => s.id)).toEqual(['a', 'b']);
+    // start() is asynchronous: the tape is ingested a microtask later
+    expect(manager.get('a').getStatus().phase).toBe('load');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.get('a').getStatus().phase).toBe('live');
     // started: the source is pushing samples
     const before = manager.get('a').store.latest.t;
     vi.advanceTimersByTime(3000);
@@ -88,10 +92,32 @@ describe('station manager', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('skips sources it cannot run yet', () => {
-    manager.sync([sim('a'), { id: 'p', name: 'P', source: { kind: 'prometheus', station: 'p' } }]);
+  it('skips sources it cannot run', () => {
+    manager.sync([sim('a'), { id: 'x', name: 'X', source: { kind: 'carrier-pigeon' } }]);
     expect(manager.list().map((s) => s.id)).toEqual(['a']);
     expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs prometheus stations, and replaces them when the Prometheus URL changes', () => {
+    // never answers: the station stays in TAPE LOAD, which is all this test needs
+    const fetch = vi.fn(() => new Promise(() => {}));
+    const p = { id: 'p', name: 'P', source: { kind: 'prometheus', station: 'p' } };
+    manager.sync([sim('a'), p], { prometheus: '/prom', fetch });
+    const first = manager.get('p');
+    expect(first.getStatus().phase).toBe('load');
+    expect(fetch.mock.calls[0][0]).toMatch(/^\/prom\/api\/v1\//);
+    manager.sync([sim('a'), p], { prometheus: '/prom', fetch });
+    expect(manager.get('p')).toBe(first);
+    manager.sync([sim('a'), p], { prometheus: '/other', fetch });
+    expect(manager.get('p')).not.toBe(first);
+  });
+
+  it('renews the snapshot when a station goes live', async () => {
+    manager.sync([sim('a')]);
+    const before = manager.getSnapshot();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(manager.getSnapshot()).not.toBe(before);
+    expect(manager.getSnapshot().list[0]).toBe(before.list[0]);
   });
 
   it('gives cross-station instruments one live view', () => {
@@ -102,8 +128,9 @@ describe('station manager', () => {
     expect(device.stations.map((s) => s.id)).toEqual(['a', 'b']);
   });
 
-  it('stops stopped stations for good', () => {
+  it('stops stopped stations for good', async () => {
     manager.sync([sim('a')]);
+    await vi.advanceTimersByTimeAsync(0);
     const a = manager.get('a');
     manager.sync([sim('b')]);
     const t = a.store.latest.t;
@@ -113,12 +140,15 @@ describe('station manager', () => {
 });
 
 describe('worstStation', () => {
-  const st = (id, state) => ({ id, store: { state } });
+  const st = (id, status) => ({ id, store: { status } });
   it('picks the worst state, first in order on a tie', () => {
     expect(worstStation([st('a', 'NOMINAL'), st('b', 'DEGRADED'), st('c', 'DEGRADED')]).id).toBe('b');
     expect(worstStation([st('a', 'DEGRADED'), st('b', 'INCIDENT')]).id).toBe('b');
     expect(worstStation([st('a', 'NOMINAL'), st('b', 'NOMINAL')]).id).toBe('a');
     expect(worstStation([])).toBeNull();
+    // STALE is worth a look, but less than degraded
+    expect(worstStation([st('a', 'NOMINAL'), st('b', 'STALE')]).id).toBe('b');
+    expect(worstStation([st('a', 'STALE'), st('b', 'DEGRADED')]).id).toBe('b');
   });
 });
 

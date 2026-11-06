@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { REGISTRY, resolveOptions, panelName, panelMeta } from '../instruments/registry.js';
+import { createTapeLoad } from '../instruments/panels.js';
 import { Module, Screen } from './device.jsx';
 
 // Lays out one page's panels on the 12 × 8 deck grid. Each panel builds its own
@@ -58,7 +59,30 @@ function Panel({ panel, stations, device, named, num }) {
       />
     );
   }
-  return <LivePanel panel={panel} def={def} station={station} named={named} num={num} style={style} />;
+  return <StationPanel panel={panel} def={def} station={station} named={named} num={num} style={style} />;
+}
+
+const noStatus = { subscribe: () => () => {}, getStatus: () => null };
+
+// A station that is still loading its tape (or rebuilding, ADR-0007) shows
+// TAPE LOAD on every screen; its instruments are built once it is live, on the
+// store it has then. The device (panels bound to '*') has no status.
+function StationPanel(props) {
+  const { station } = props;
+  const src = station.getStatus ? station : noStatus;
+  const status = useSyncExternalStore(src.subscribe, src.getStatus);
+  if (status?.phase === 'load') return <LoadingPanel {...props} />;
+  return <LivePanel {...props} generation={status?.generation ?? 0} />;
+}
+
+function LoadingPanel({ panel, def, station, named, num, style }) {
+  const inst = useMemo(() => createTapeLoad(station), [station]);
+  const base = safeName(def, panel.options) ?? panel.type;
+  return (
+    <Module num={num} name={named ? `${base} · ${station.name}` : base} meta="Tape load" className="panel" style={style}>
+      <Screen inst={inst} />
+    </Module>
+  );
 }
 
 function safeName(def, options) {
@@ -71,7 +95,7 @@ function safeName(def, options) {
 
 const noStore = { subscribe: () => () => {}, getSnapshot: () => null };
 
-function LivePanel({ panel, def, station, named, num, style }) {
+function LivePanel({ panel, def, station, named, num, style, generation }) {
   // Live captions and overlays follow the station's (throttled) snapshot. The
   // device has no store of its own; its instruments draw from the stations.
   const store = station.store ?? noStore;
@@ -86,8 +110,9 @@ function LivePanel({ panel, def, station, named, num, style }) {
     } catch (error) {
       return { options, error };
     }
-    // keyed on the options' JSON, not the object, so an equal document doesn't rebuild the instrument
-  }, [panel.id, panel.type, station, optionsKey]);
+    // keyed on the options' JSON, not the object, so an equal document doesn't rebuild the instrument;
+    // a rebuilt station (new generation) has new tables, so its instruments are built again
+  }, [panel.id, panel.type, station, optionsKey, generation]);
 
   if (built.error) {
     return <EmptyPanel num={num} name={panel.type} style={style} text="NO MODULE" warning={`panel "${panel.id}": ${built.error.message}`} />;

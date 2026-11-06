@@ -1,5 +1,5 @@
 import { createDotMatrix } from './dotmatrix.js';
-import { hms } from '../data/telemetry.js';
+import { hms, routeLabel } from '../data/telemetry.js';
 import { fmtPeriod } from '../data/signal.js';
 import { worstStation } from '../station/manager.js';
 
@@ -102,7 +102,8 @@ export function createClock(target, options = {}) {
   });
 }
 
-const STATE_COLOR = { NOMINAL: 1, DEGRADED: 2, INCIDENT: 3 };
+// STALE is drawn dim: no colour, since there is no reading to signal
+const STATE_COLOR = { NOMINAL: 1, DEGRADED: 2, INCIDENT: 3, STALE: 4 };
 function elapsed(sec) {
   sec = Math.max(0, Math.floor(sec));
   const pad = (n) => String(n).padStart(2, '0');
@@ -126,7 +127,7 @@ export function createStatus(target, options = {}) {
         return;
       }
       const { store } = station;
-      const st = store.state;
+      const st = store.status;
       const blinkOff = st === 'INCIDENT' && f.now % 1000 > 620;
       const label = target.stations?.length > 1 && st !== 'NOMINAL' ? `${st} · ${station.name}` : st;
       const dur = store.stateSince === null ? '' : elapsed(store.now() - store.stateSince);
@@ -151,8 +152,9 @@ export function createRules(station, options = {}) {
   const { store } = station;
   const { thresh } = station.profile;
   const COLS = [0, 3, 18, 26, 31];
+  const tall = store.caps.nodes != null ? 9 : 7; // lines, with the heading
   return createDotMatrix({
-    layout: (w, h) => clamp(Math.min(h / 57, w / (35 * 6 + 2)), 1.8, 4),
+    layout: (w, h) => clamp(Math.min(h / (tall * 8 + 1), w / (35 * 6 + 2)), 1.8, 4),
     draw(api) {
       const x = store.latest;
       if (!x) return;
@@ -165,8 +167,18 @@ export function createRules(station, options = {}) {
         ['SATURATION', `${Math.round(x.saturation * 100)}%`, `<${thresh.satWarn * 100}`, lvl(x.saturation, thresh.satWarn, thresh.satCrit)],
         ['NODES CRIT', c.crit, '=0', lvl(c.crit, 1, 3)],
         ['NODES DOWN', c.off, '=0', lvl(c.off, 1, 4)],
-        ['SOURCE AGE', `${age.toFixed(1)}S`, '<5', lvl(age, 5, 30)],
+        // a live source that went quiet is STALE at once (its source decides when)
+        ['SOURCE AGE', age >= 600 ? `${Math.floor(age / 60)}M` : `${age.toFixed(1)}S`, '<5', store.stale ? 2 : lvl(age, 5, 30)],
       ];
+      // Prometheus stations: alerts from Prometheus's own rules, and the spare
+      // slots of the discovered tables (ADR-0007), amber once they overflowed
+      if (store.caps.nodes != null) {
+        const ext = store.external;
+        rules.push(['EXT ALERTS', ext.length ? ext[0].name.slice(0, 7).toUpperCase() : 0, '=0', ext.length ? 1 : 0]);
+        const used = store.hostCount + store.endpoints.length + store.stages.length + store.regions.length;
+        const cap = store.caps.nodes + store.caps.endpoints + store.caps.stages + store.caps.regions;
+        rules.push(['SLOTS USED', `${used}/${cap}`, store.rebuilds ? 'RBLT' : '<75%', store.overflow ? 2 : store.rebuilds || used > cap * 0.75 ? 1 : 0]);
+      }
       const lines = rules.length + 1;
       const y0 = Math.max(0, Math.floor((api.h - (lines * 8 - 1)) / 2));
       const nom = rules.filter((r) => r[3] === 0).length;
@@ -176,7 +188,7 @@ export function createRules(station, options = {}) {
       rules.forEach(([label, value, limit, l], i) => {
         const col = [1, 2, 3][l];
         const flag = l === 0 ? 4 : col;
-        const name = label === 'SOURCE AGE' && l === 2 ? 'STALE' : FLAG[l];
+        const name = label === 'SOURCE AGE' && l === 2 ? 'STALE' : label === 'SLOTS USED' && l === 2 ? 'FULL' : FLAG[l];
         row(api, y0 + (i + 1) * 8, [[`R${i + 1}`, 4], [label, l ? col : 1], [value, col], [limit, 4], [name, flag]], COLS);
       });
     },
@@ -202,7 +214,7 @@ export function createTrace(station, options = {}) {
           y0 + i * 8,
           [
             [hms(r.t), 4],
-            [String(r.route).slice(0, 12), 1],
+            [routeLabel(r.route).slice(0, 12), 1],
             [r.status, err ? 3 : miss ? 2 : 4],
             [`${r.ms.toFixed(1)}MS`, slow ? 2 : 1],
             [r.node != null ? `N${String(r.node + 1).padStart(2, '0')}` : '', 4],
@@ -229,7 +241,8 @@ export function createContacts(station, options = {}) {
       eps.slice(0, lines - 1).forEach((ep, i) => {
         const y = y0 + (i + 1) * 8;
         const brg = String(Math.round(((i + 0.35) / n) * 360)).padStart(3, '0');
-        if (!ep.live) return row(api, y, [[brg, 4], [ep.route.slice(0, 12), 4], ['NO DATA', 4]], COLS, 4);
+        const route = routeLabel(ep.route).slice(0, 12);
+        if (!ep.live) return row(api, y, [[brg, 4], [route, 4], ['NO DATA', 4]], COLS, 4);
         const col = [1, 2, 3][ep.state];
         const arrow = ep.trend > 0.002 ? '▲' : ep.trend < -0.002 ? '▼' : '';
         row(
@@ -237,10 +250,11 @@ export function createContacts(station, options = {}) {
           y,
           [
             [brg, 4],
-            [ep.route.slice(0, 12), ep.state ? col : 1],
+            [route, ep.state ? col : 1],
             [Math.round(ep.rps), 4],
             [ep.p95.toFixed(1), ep.p95 >= ep.slo ? 3 : ep.p95 >= ep.slo * 0.75 ? 2 : 1],
-            [ep.slo, 4],
+            // A: derived from the observed 4 h P95, not set in the document
+            [ep.auto ? `${ep.slo}A` : ep.slo, 4],
             [`${Math.round(ep.pressure * 100)}%`, col],
             [arrow, ep.trend > 0 ? (ep.state ? col : 2) : 4],
           ],
@@ -280,7 +294,7 @@ export function createOrigins(station, options = {}) {
             [rg.name, 4],
             ['', 1],
             [Math.round(rg.rps), 4],
-            [`${Math.round(rg.rtt)}`, rg.state ? col : 1],
+            [rg.rtt >= 0 ? `${Math.round(rg.rtt)}` : '--', rg.state ? col : 1],
             [(rg.err * 100).toFixed(2), rg.err >= thresh.errCrit ? 3 : rg.err >= thresh.errWarn ? 2 : 4],
             [['NOM', 'DEG', 'LOST'][rg.state], rg.state ? col : 4],
           ],
@@ -319,7 +333,7 @@ export function createRhythms(station, options = {}) {
       const y0 = Math.max(0, Math.floor((api.h - (lines * 8 - 1)) / 2));
       row(api, y0, [['', 4], ['PERIOD', 4], ['AMP', 4], ['CYCLE', 4], ['NEXT PEAK', 4], ['IN', 4], ['', 4]], COLS, 4);
       if (!peaks.length) {
-        api.text(4 + COLS[1] * 6, y0 + 8, signal.spec.t < 0 ? 'ANALYSING' : 'NO RHYTHM ABOVE NOISE', 4);
+        api.text(4 + COLS[1] * 6, y0 + 8, signal.spec.searched ? 'NO RHYTHM ABOVE NOISE' : 'ANALYSING', 4);
         return;
       }
       peaks.slice(0, lines - 1).forEach((pk, i) => {
@@ -410,6 +424,29 @@ export function createLogbook(station, options = {}) {
           4,
         );
       });
+    },
+  });
+}
+
+// The power-on state of a station's screens while its tape loads (a backfill
+// from the backend, after discovery for Prometheus): TAPE LOAD with a reel
+// counter and a progress bar, or NO CONTACT while the backend can't be reached.
+// Shown in place of every instrument of that station until it goes live.
+export function createTapeLoad(station, options = {}) {
+  return createDotMatrix({
+    layout: (w, h) => clamp(Math.min(h / 30, w / 70), 1.6, 4),
+    draw(api, f) {
+      const { progress, problem, generation } = station.getStatus();
+      const y = Math.max(0, Math.floor(api.h / 2) - 9);
+      const blink = f.now % 1200 < 700;
+      const title = problem ?? (generation > 1 ? 'TAPE RELOAD' : 'TAPE LOAD');
+      api.text(Math.floor((api.w - api.measure(title)) / 2), y, title, problem ? 2 : 1);
+      const len = Math.min(api.w - 8, 50);
+      const x0 = Math.floor((api.w - len) / 2);
+      const lit = Math.round(clamp(progress, 0, 1) * len);
+      for (let i = 0; i < len; i++) api.dot(x0 + i, y + 11, i < lit ? 1 : i === lit && blink ? 5 : 6);
+      const sub = problem ? 'RETRYING' : `${String(Math.round(progress * 100)).padStart(3, ' ')}%`;
+      api.text(Math.floor((api.w - api.measure(sub)) / 2), y + 15, sub, 4);
     },
   });
 }

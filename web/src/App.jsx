@@ -25,8 +25,9 @@ const toggleFullscreen = () => {
 
 const noStore = { subscribe: () => () => {}, getSnapshot: () => null };
 
-// The worst state across all stations, for the alarm lamp. Re-renders when any
-// station's store notifies.
+// The worst state across all stations, for the alarm lamp: store.status, so a
+// STALE station darkens it and an external alert lights it amber. Re-renders
+// when any station's store notifies.
 function useWorstState(list) {
   const subscribe = useCallback(
     (fn) => {
@@ -35,7 +36,7 @@ function useWorstState(list) {
     },
     [list],
   );
-  return useSyncExternalStore(subscribe, () => worstStation(list)?.store.state ?? 'NOMINAL');
+  return useSyncExternalStore(subscribe, () => worstStation(list)?.store.status ?? 'NOMINAL');
 }
 
 // The stations the current page shows, in panel order. A page that binds none
@@ -58,6 +59,10 @@ export default function App({ docStore, manager, device }) {
   const leadStore = lead?.store ?? noStore;
   const snap = useSyncExternalStore(leadStore.subscribe, leadStore.getSnapshot);
   const lamp = useWorstState(list);
+  // The time base (S) only exists for simulated stations; a live one runs at ×1.
+  const sim = list.find((s) => s.source.kind === 'SIMULATED') ?? null;
+  const simStore = sim?.store ?? noStore;
+  const simSnap = useSyncExternalStore(simStore.subscribe, simStore.getSnapshot);
 
   const canvasRef = useRef(null);
   const [engine, setEngine] = useState(null);
@@ -72,7 +77,9 @@ export default function App({ docStore, manager, device }) {
   const pageNo = Math.min(Math.max(1, page), pages.length);
   const current = pages[pageNo - 1];
   const onPage = useMemo(() => stationsOnPage(current, byId, list), [current, byId, list]);
-  const testStation = onPage.length ? onPage[target % onPage.length] : null;
+  // only a simulated station can take a test incident
+  const testable = useMemo(() => onPage.filter((s) => s.source.kind === 'SIMULATED'), [onPage]);
+  const testStation = testable.length ? testable[target % testable.length] : null;
 
   // The housing tubes are built once on the device view, which always lists
   // the current stations.
@@ -80,7 +87,7 @@ export default function App({ docStore, manager, device }) {
 
   // Key handlers are bound once; they read the latest values from here.
   const live = useRef(null);
-  live.current = { pages, onPage, testStation, list };
+  live.current = { pages, testable, testStation, list };
 
   useEffect(() => localStorage.setItem('mars.page', pageNo), [pageNo]);
   useEffect(() => setTarget(0), [current.id]);
@@ -115,9 +122,10 @@ export default function App({ docStore, manager, device }) {
         s.store.note(1, 'TEST ALARM INJECTED BY OPERATOR');
       },
       target() {
-        if (live.current.onPage.length > 1) setTarget((t) => t + 1);
+        if (live.current.testable.length > 1) setTarget((t) => t + 1);
       },
       // The time base is one setting for the device: every simulated station follows it.
+  // Live stations (Prometheus, poll) ignore it.
       speed() {
         const sims = live.current.list.filter((s) => s.source.kind === 'SIMULATED');
         if (!sims.length) return;
@@ -178,7 +186,7 @@ export default function App({ docStore, manager, device }) {
     };
   }, [actions]);
 
-  const nodes = list.reduce((n, s) => n + s.source.hostCount, 0);
+  const nodes = list.reduce((n, s) => n + s.store.hostCount, 0);
 
   return (
     <EngineContext.Provider value={engine}>
@@ -233,7 +241,7 @@ export default function App({ docStore, manager, device }) {
               <Key k="T" onClick={actions.test} accent>
                 {onPage.length > 1 && testStation ? `Test · ${testStation.name}` : 'Test alarm'}
               </Key>
-              <Key k="S" onClick={actions.speed}>Time ×{snap?.speed ?? 1}</Key>
+              <Key k="S" onClick={actions.speed}>{sim ? `Time ×${simSnap?.speed ?? 1}` : 'Time ×1 live'}</Key>
               <Key k="B" onClick={actions.finish}>Finish</Key>
             </div>
             <div className="grille" />

@@ -23,7 +23,7 @@ const source = z.discriminatedUnion('kind', [
   }),
   // a JSON endpoint polled once per second (data/polling.js)
   z.object({ kind: z.literal('poll'), url: z.string().min(1), hosts: int(1, 256).default(32) }),
-  // accepted so documents written for step 07 load; the runtime starts it from step 07 on
+  // a station of a Prometheus server (step 07): the value of its `station` label
   z.object({ kind: z.literal('prometheus'), station: z.string().min(1) }),
 ]);
 
@@ -49,6 +49,10 @@ const station = z.object({
   thresh: thresh.optional(),
   slo: z.object({ target: z.number().gt(0).lt(1), days: int(1, 30) }).partial().optional(),
   home: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).optional(),
+  // Prometheus stations: P95 SLOs (ms) for routes and the order of the pipeline
+  // stages, on top of what discovery finds. Other source kinds ignore them.
+  endpoints: z.array(z.object({ route: z.string().min(1), slo: z.number().positive() })).optional(),
+  stages: z.array(z.string().min(1)).optional(),
 });
 
 const panel = z.object({

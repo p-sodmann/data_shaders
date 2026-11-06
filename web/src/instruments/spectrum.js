@@ -50,9 +50,14 @@ export function createSpectrum(station, options = {}) {
       }
       v.line(L, B, R, B, PH.ok, 0.25, 0.5);
 
-      // 4 h reference: bars, peak hold and a dim trace
+      // 4 h reference: bars, peak hold and a dim trace; it needs half the window
+      // with data, which a live station that just started doesn't have yet
       let prev = null;
-      for (let b = 0; b < longP.length; b++) {
+      if (!spec.ref) {
+        const msg = '4H REFERENCE AFTER 2H OF DATA';
+        v.text(R - v.textWidth(msg, 1.3), T - 16, msg, PH.ok, 0.4, 1.3);
+      }
+      for (let b = 0; spec.ref && b < longP.length; b++) {
         const xx = x(longP[b]);
         const yy = y(spec.amp[b]);
         v.line(xx, B, xx, yy, PH.ok, 0.06, 0.5);
@@ -87,7 +92,7 @@ export function createSpectrum(station, options = {}) {
       }
       v.line(cursor, T, cursor, B, PH.ok, 0.22, 0.6);
       v.dot(cursor, B, PH.ok, 0.9, 1.1);
-      v.text(L + 4, B - 12, '4H', PH.ok, 0.35, 1.2);
+      if (spec.ref) v.text(L + 4, B - 12, '4H', PH.ok, 0.35, 1.2);
       v.text(xLive + 4, B - 12, '10M LIVE', PH.ok, 0.6, 1.2);
       for (let yy = T; yy < B; yy += 7) v.dot(xLive, yy, PH.ok, 0.12, 0.45);
 
@@ -107,7 +112,7 @@ export function createSpectrum(station, options = {}) {
         const ly = top - 12 - (i % 2) * 10;
         v.text(Math.min(R - v.textWidth(s, 1.3), Math.max(L, xx - v.textWidth(s, 1.3) / 2)), ly, s, c, 0.9, 1.3);
       });
-      if (!peaks.length) v.text(L, T - 16, 'NO RHYTHM ABOVE NOISE', PH.ok, 0.4, 1.3);
+      if (!peaks.length && spec.searched) v.text(L, T - 16, 'NO RHYTHM ABOVE NOISE', PH.ok, 0.4, 1.3);
     },
   };
 }
