@@ -17,7 +17,7 @@ built-in simulator.
 ```
 web/            MARS display (Vite + React + WebGL2)        → web/README.md
 probe/          mars-probe Python package                   → probe/README.md
-examples/demo/  demo FastAPI service + load generator       (step 02)
+examples/demo/  demo FastAPI service + load generator       → examples/demo/README.md
 deploy/         docker compose, Prometheus config, Caddy    (step 03)
 docs/           plan: steps, ADRs, open questions           → docs/README.md
 ```
@@ -31,6 +31,17 @@ cd web && npm i && npm run dev
 Open the printed URL and press `F` for fullscreen. `npm run smoke` in `web/` is the headless
 regression check (pages 1–5, console errors, module headers, screenshots in `web/snapshots/`).
 Keys, URL parameters and the instrument reference are in [web/README.md](web/README.md).
+
+## Run the demo service
+
+```bash
+cd examples/demo && uv sync
+MARS_STATION=api uv run uvicorn demo.app:app --port 8001 &
+LOADGEN_TARGETS=http://localhost:8001 uv run python -m demo.loadgen
+```
+
+Two stations, the chaos API and the Docker image are in
+[examples/demo/README.md](examples/demo/README.md).
 
 ## Run the whole stack
 

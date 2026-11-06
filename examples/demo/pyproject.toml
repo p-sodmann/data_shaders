@@ -1,0 +1,37 @@
+[project]
+name = "mars-demo"
+version = "0.1.0"
+description = "Demo FastAPI service and load generator for MARS"
+requires-python = ">=3.11"
+dependencies = [
+    "mars-probe",
+    "fastapi",
+    "uvicorn",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.uv.sources]
+mars-probe = { path = "../../probe", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["demo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]

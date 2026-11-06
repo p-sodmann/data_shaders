@@ -1,0 +1,11 @@
+# Builds that use the repo root as context (examples/demo/Dockerfile) send only sources.
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+web/dist
+web/snapshots
+web/test-results

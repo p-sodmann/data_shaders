@@ -45,6 +45,15 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   (`npx playwright install --with-deps chromium` on Linux). Should step 12 add a GitHub Actions
   workflow?
 
+## Demo
+
+- **Podman.** The dev machine runs Podman, not Docker Desktop. The demo image builds with both
+  `podman build` and the Docker CLI over the Podman socket (step 02). Should step 03 also check
+  `podman compose` (healthchecks and profiles behave slightly differently)?
+- **Daily phase in UTC.** The loadgen's daily sine uses UTC wall-clock time (low at 03:00, high
+  at 15:00 UTC), while the simulator uses the browser's local time. Should the loadgen take a
+  `LOADGEN_TZ` so a demo peaks in the viewer's afternoon?
+
 ## Probe
 
 - **Licence.** No licence is chosen, so `probe/pyproject.toml` has no `license` field. It's
