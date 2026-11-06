@@ -16,7 +16,7 @@ built-in simulator.
 
 ```
 web/            MARS display (Vite + React + WebGL2)        → web/README.md
-probe/          mars-probe Python package                   (step 01)
+probe/          mars-probe Python package                   → probe/README.md
 examples/demo/  demo FastAPI service + load generator       (step 02)
 deploy/         docker compose, Prometheus config, Caddy    (step 03)
 docs/           plan: steps, ADRs, open questions           → docs/README.md

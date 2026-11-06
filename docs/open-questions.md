@@ -47,6 +47,10 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 ## Probe
 
+- **Licence.** No licence is chosen, so `probe/pyproject.toml` has no `license` field. It's
+  needed before publishing (step 12).
+- **Test client dependency.** Starlette 1.10 deprecates `httpx` in `starlette.testclient` in
+  favour of `httpx2`. Switch the `dev` extra when the minimum Starlette allows it (step 01).
 - **Package name** on PyPI: `mars-probe` might be taken. Check this before step 12.
 - **Other frameworks.** Plain ASGI middleware works for Starlette and FastAPI. Is Flask/WSGI
   wanted?
