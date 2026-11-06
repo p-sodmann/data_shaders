@@ -1,0 +1,141 @@
+# MARS recording rules: the contract between mars-probe and the MARS display (ADR-0003).
+# This is the only copy. It ships in the mars-probe wheel (`mars-probe rules` prints it),
+# deploy/compose.yaml mounts it, and probe/tests/prometheus/mars.rules.test.yml tests it.
+#
+# Conventions:
+# - Rate windows are [10s]; with a 1 s scrape that is ~10 samples. MARS smooths on top.
+# - Latency and ratio rules are absent while a series has no traffic (a quantile or a ratio of
+#   nothing is NaN, which the display can't tell apart from a broken query). Throughput rules
+#   are 0 instead, because "no requests" is a real reading.
+# - `job` is dropped everywhere: MARS identifies a station by `station` and a node by `instance`.
+groups:
+  - name: mars
+    interval: 1s
+    rules:
+      # ── station level ─────────────────────────────────────────────────────────────────────
+      - record: mars:throughput_rps
+        expr: sum by (station) (rate(mars_http_request_duration_seconds_count[10s]))
+
+      - record: mars:latency_p50_ms
+        expr: |
+          histogram_quantile(0.5,
+            sum by (station, le) (rate(mars_http_request_duration_seconds_bucket[10s]))
+          ) * 1000
+          and on (station)
+          sum by (station) (rate(mars_http_request_duration_seconds_count[10s])) > 0
+
+      # The `or (… * 0)` term makes the numerator 0 (not absent) when a station has traffic but
+      # has never served a 5xx; the `> 0` on the denominator makes the ratio absent, not NaN,
+      # when there is no traffic at all.
+      - record: mars:error_ratio
+        expr: |
+          (
+            sum by (station) (rate(mars_http_request_duration_seconds_count{code_class="5xx"}[10s]))
+            or
+            sum by (station) (rate(mars_http_request_duration_seconds_count[10s])) * 0
+          )
+          /
+          (sum by (station) (rate(mars_http_request_duration_seconds_count[10s])) > 0)
+
+      # The busiest node decides: max over nodes of in_flight/limit and of CPU load. The
+      # label_replace gives the two terms different label sets so `or` keeps both and `max`
+      # picks the larger. A limit of 0 means unset, and `> 0` drops that term entirely.
+      - record: mars:saturation_ratio
+        expr: |
+          clamp(
+            max by (station) (
+              label_replace(
+                mars_http_requests_in_flight / (mars_http_requests_in_flight_limit > 0),
+                "term", "inflight", "", ""
+              )
+              or
+              label_replace(rate(mars_process_cpu_seconds_total[10s]), "term", "cpu", "", "")
+            ),
+            0, 1
+          )
+
+      # ── nodes ─────────────────────────────────────────────────────────────────────────────
+      # `up` alone has no station. mars_info carries it, and last_over_time keeps it for an
+      # hour after the target dies, so a dead node reads 0 instead of vanishing. mars_info is
+      # the many side: after a restart with a new version (or station) there are briefly two
+      # info series per instance, which would make a group_left onto `up` fail.
+      - record: mars:node_up
+        expr: |
+          max by (station, instance) (
+            last_over_time(mars_info[1h]) * on (job, instance) group_left up
+          )
+
+      - record: mars:node_load_ratio
+        expr: |
+          clamp_max(max by (station, instance) (rate(mars_process_cpu_seconds_total[10s])), 1)
+
+      - record: mars:node_latency_p50_ms
+        expr: |
+          histogram_quantile(0.5,
+            sum by (station, instance, le) (rate(mars_http_request_duration_seconds_bucket[10s]))
+          ) * 1000
+          and on (station, instance)
+          sum by (station, instance) (rate(mars_http_request_duration_seconds_count[10s])) > 0
+
+      # ── endpoints (route templates, including "<unmatched>") ──────────────────────────────
+      - record: mars:endpoint_rps
+        expr: sum by (station, route) (rate(mars_http_request_duration_seconds_count[10s]))
+
+      - record: mars:endpoint_p95_ms
+        expr: |
+          histogram_quantile(0.95,
+            sum by (station, route, le) (rate(mars_http_request_duration_seconds_bucket[10s]))
+          ) * 1000
+          and on (station, route)
+          sum by (station, route) (rate(mars_http_request_duration_seconds_count[10s])) > 0
+
+      - record: mars:endpoint_error_ratio
+        expr: |
+          (
+            sum by (station, route) (rate(mars_http_request_duration_seconds_count{code_class="5xx"}[10s]))
+            or
+            sum by (station, route) (rate(mars_http_request_duration_seconds_count[10s])) * 0
+          )
+          /
+          (sum by (station, route) (rate(mars_http_request_duration_seconds_count[10s])) > 0)
+
+      # ── stages ────────────────────────────────────────────────────────────────────────────
+      - record: mars:stage_mean_ms
+        expr: |
+          sum by (station, stage) (rate(mars_stage_duration_seconds_sum[10s]))
+          /
+          (sum by (station, stage) (rate(mars_stage_duration_seconds_count[10s])) > 0)
+          * 1000
+
+      # ── regions (requests without a known region are left out) ────────────────────────────
+      - record: mars:region_rps
+        expr: |
+          sum by (station, region) (
+            rate(mars_http_request_duration_seconds_count{region!="unknown"}[10s])
+          )
+
+      - record: mars:region_error_ratio
+        expr: |
+          (
+            sum by (station, region) (
+              rate(mars_http_request_duration_seconds_count{code_class="5xx", region!="unknown"}[10s])
+            )
+            or
+            sum by (station, region) (
+              rate(mars_http_request_duration_seconds_count{region!="unknown"}[10s])
+            ) * 0
+          )
+          /
+          (
+            sum by (station, region) (
+              rate(mars_http_request_duration_seconds_count{region!="unknown"}[10s])
+            ) > 0
+          )
+
+      # mars_client_rtt_seconds arrives in step 11; until then this rule records nothing.
+      - record: mars:region_rtt_ms
+        expr: |
+          sum by (station, region) (rate(mars_client_rtt_seconds_sum{region!="unknown"}[10s]))
+          /
+          (sum by (station, region) (rate(mars_client_rtt_seconds_count{region!="unknown"}[10s])) > 0)
+          * 1000

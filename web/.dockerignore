@@ -1,0 +1,5 @@
+node_modules
+dist
+snapshots
+test-results
+_legacy_pulse

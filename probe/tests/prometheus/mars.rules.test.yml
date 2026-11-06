@@ -1,0 +1,301 @@
+# promtool unit tests for the MARS recording rules (ADR-0003).
+#   promtool test rules probe/tests/prometheus/mars.rules.test.yml
+#   bash probe/scripts/test-rules.sh          # same, inside the prom/prometheus image
+#
+# Counters grow linearly at 1 s steps, so every rate is exact: `0+9x30` is 9 per second.
+# Histograms only carry the buckets a case needs; histogram_quantile interpolates linearly
+# inside a bucket, so everything in (0.005, 0.01] at rank 50 % gives 7.5 ms.
+rule_files:
+  - ../../src/mars_probe/prometheus/mars.rules.yml
+
+evaluation_interval: 1s
+fuzzy_compare: true
+
+tests:
+  # ── normal traffic: 9 rps OK in FRA, 1 rps 5xx with no region, two stages ───────────────
+  - name: normal traffic
+    interval: 1s
+    input_series:
+      - series: 'mars_info{job="mars", instance="api:8000", station="api", version="0.1.0"}'
+        values: '1x30'
+      - series: 'up{job="mars", instance="api:8000"}'
+        values: '1x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA", le="0.005"}'
+        values: '0x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA", le="0.01"}'
+        values: '0+9x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA", le="+Inf"}'
+        values: '0+9x30'
+      - series: 'mars_http_request_duration_seconds_count{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA"}'
+        values: '0+9x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="5xx", region="unknown", le="0.005"}'
+        values: '0x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="5xx", region="unknown", le="0.01"}'
+        values: '0+1x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="5xx", region="unknown", le="+Inf"}'
+        values: '0+1x30'
+      - series: 'mars_http_request_duration_seconds_count{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="5xx", region="unknown"}'
+        values: '0+1x30'
+      - series: 'mars_stage_duration_seconds_sum{job="mars", instance="api:8000", station="api", stage="infer"}'
+        values: '0+0.25x30'
+      - series: 'mars_stage_duration_seconds_count{job="mars", instance="api:8000", station="api", stage="infer"}'
+        values: '0+8x30'
+      - series: 'mars_stage_duration_seconds_sum{job="mars", instance="api:8000", station="api", stage="auth"}'
+        values: '0+0.0625x30'
+      - series: 'mars_stage_duration_seconds_count{job="mars", instance="api:8000", station="api", stage="auth"}'
+        values: '0+16x30'
+      - series: 'mars_process_cpu_seconds_total{job="mars", instance="api:8000", station="api"}'
+        values: '0+0.25x30'
+      - series: 'mars_http_requests_in_flight{job="mars", instance="api:8000", station="api"}'
+        values: '8x30'
+      - series: 'mars_http_requests_in_flight_limit{job="mars", instance="api:8000", station="api"}'
+        values: '64x30'
+    promql_expr_test:
+      - expr: mars:throughput_rps
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:throughput_rps{station="api"}'
+            value: 10
+      - expr: mars:latency_p50_ms
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:latency_p50_ms{station="api"}'
+            value: 7.5
+      - expr: mars:error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:error_ratio{station="api"}'
+            value: 0.1
+      - expr: mars:node_up
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:node_up{station="api", instance="api:8000"}'
+            value: 1
+      - expr: mars:node_load_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:node_load_ratio{station="api", instance="api:8000"}'
+            value: 0.25
+      - expr: mars:node_latency_p50_ms
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:node_latency_p50_ms{station="api", instance="api:8000"}'
+            value: 7.5
+      # In-flight 8/64 = 0.125 is below the CPU load, so CPU decides.
+      - expr: mars:saturation_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:saturation_ratio{station="api"}'
+            value: 0.25
+      # Per route: P95 is rank 9.5 of 10 inside (0.005, 0.01].
+      - expr: mars:endpoint_rps
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:endpoint_rps{station="api", route="/v1/predict"}'
+            value: 10
+      - expr: mars:endpoint_p95_ms
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:endpoint_p95_ms{station="api", route="/v1/predict"}'
+            value: 9.75
+      - expr: mars:endpoint_error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:endpoint_error_ratio{station="api", route="/v1/predict"}'
+            value: 0.1
+      # Per stage: 0.25 s over 8 calls, 0.0625 s over 16 calls (binary-exact, no float noise).
+      - expr: mars:stage_mean_ms
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:stage_mean_ms{station="api", stage="infer"}'
+            value: 31.25
+          - labels: 'mars:stage_mean_ms{station="api", stage="auth"}'
+            value: 3.90625
+      # Per region: the 5xx were region "unknown", which is left out, so FRA has 0 errors.
+      - expr: mars:region_rps
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:region_rps{station="api", region="FRA"}'
+            value: 9
+      - expr: mars:region_error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:region_error_ratio{station="api", region="FRA"}'
+            value: 0
+      # No mars_client_rtt_seconds yet (step 11).
+      - expr: mars:region_rtt_ms
+        eval_time: 20s
+        exp_samples: []
+
+  # ── zero errors: traffic, but no 5xx series at all → 0, not absent ──────────────────────
+  - name: zero errors
+    interval: 1s
+    input_series:
+      - series: 'mars_http_request_duration_seconds_count{job="mars", instance="search:8000", station="search", route="/v1/rank", method="POST", code_class="2xx", region="unknown"}'
+        values: '0+5x30'
+      - series: 'mars_http_request_duration_seconds_count{job="mars", instance="search:8000", station="search", route="/v1/items/{item_id}", method="GET", code_class="4xx", region="unknown"}'
+        values: '0+1x30'
+    promql_expr_test:
+      - expr: mars:error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:error_ratio{station="search"}'
+            value: 0
+      # 4xx is not an error.
+      - expr: mars:endpoint_error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:endpoint_error_ratio{station="search", route="/v1/rank"}'
+            value: 0
+          - labels: 'mars:endpoint_error_ratio{station="search", route="/v1/items/{item_id}"}'
+            value: 0
+
+  # ── all errors ──────────────────────────────────────────────────────────────────────────
+  - name: all errors
+    interval: 1s
+    input_series:
+      - series: 'mars_http_request_duration_seconds_count{job="mars", instance="api:8000", station="api", route="/v1/embed", method="POST", code_class="5xx", region="FRA"}'
+        values: '0+4x30'
+    promql_expr_test:
+      - expr: mars:error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:error_ratio{station="api"}'
+            value: 1
+      - expr: mars:endpoint_error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:endpoint_error_ratio{station="api", route="/v1/embed"}'
+            value: 1
+      - expr: mars:region_error_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:region_error_ratio{station="api", region="FRA"}'
+            value: 1
+
+  # ── no traffic: counters exist but don't move ───────────────────────────────────────────
+  - name: no traffic
+    interval: 1s
+    input_series:
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA", le="0.01"}'
+        values: '100x30'
+      - series: 'mars_http_request_duration_seconds_bucket{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA", le="+Inf"}'
+        values: '100x30'
+      - series: 'mars_http_request_duration_seconds_count{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="2xx", region="FRA"}'
+        values: '100x30'
+      - series: 'mars_stage_duration_seconds_sum{job="mars", instance="api:8000", station="api", stage="infer"}'
+        values: '1x30'
+      - series: 'mars_stage_duration_seconds_count{job="mars", instance="api:8000", station="api", stage="infer"}'
+        values: '100x30'
+    promql_expr_test:
+      # Throughput is a real 0 ...
+      - expr: mars:throughput_rps
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:throughput_rps{station="api"}'
+            value: 0
+      - expr: mars:endpoint_rps
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:endpoint_rps{station="api", route="/v1/predict"}'
+            value: 0
+      - expr: mars:region_rps
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:region_rps{station="api", region="FRA"}'
+            value: 0
+      # ... while latencies and ratios are absent rather than NaN.
+      - expr: mars:latency_p50_ms
+        eval_time: 20s
+        exp_samples: []
+      - expr: mars:node_latency_p50_ms
+        eval_time: 20s
+        exp_samples: []
+      - expr: mars:error_ratio
+        eval_time: 20s
+        exp_samples: []
+      - expr: mars:endpoint_p95_ms
+        eval_time: 20s
+        exp_samples: []
+      - expr: mars:endpoint_error_ratio
+        eval_time: 20s
+        exp_samples: []
+      - expr: mars:region_error_ratio
+        eval_time: 20s
+        exp_samples: []
+      - expr: mars:stage_mean_ms
+        eval_time: 20s
+        exp_samples: []
+
+  # ── a node goes down: node_up reads 0 instead of vanishing ──────────────────────────────
+  # api-1 dies after 10 s (its series go stale, `up` drops to 0). api-2 is restarted with a
+  # new version at 10 s, so for an hour it has two mars_info series; it must still read 1.
+  - name: node down
+    interval: 1s
+    input_series:
+      - series: 'up{job="mars", instance="api-1:8000"}'
+        values: '1x10 0x20'
+      - series: 'mars_info{job="mars", instance="api-1:8000", station="api", version="0.1.0"}'
+        values: '1x10 stale'
+      - series: 'up{job="mars", instance="api-2:8000"}'
+        values: '1x30'
+      - series: 'mars_info{job="mars", instance="api-2:8000", station="api", version="0.1.0"}'
+        values: '1x10 stale'
+      - series: 'mars_info{job="mars", instance="api-2:8000", station="api", version="0.2.0"}'
+        values: '_x10 1x20'
+    promql_expr_test:
+      - expr: mars:node_up
+        eval_time: 5s
+        exp_samples:
+          - labels: 'mars:node_up{station="api", instance="api-1:8000"}'
+            value: 1
+          - labels: 'mars:node_up{station="api", instance="api-2:8000"}'
+            value: 1
+      - expr: mars:node_up
+        eval_time: 25s
+        exp_samples:
+          - labels: 'mars:node_up{station="api", instance="api-1:8000"}'
+            value: 0
+          - labels: 'mars:node_up{station="api", instance="api-2:8000"}'
+            value: 1
+
+  # ── saturation with and without an in-flight limit ──────────────────────────────────────
+  # sat-limit: in-flight 48/64 = 0.75 beats CPU 0.25.
+  # sat-nolimit: limit 0 (unset), so only CPU 0.25 counts even with 48 in flight.
+  # sat-hot: two nodes, the busier one decides; CPU 1.5 cores clamps to 1.
+  - name: saturation
+    interval: 1s
+    input_series:
+      - series: 'mars_http_requests_in_flight{job="mars", instance="a:8000", station="sat-limit"}'
+        values: '48x30'
+      - series: 'mars_http_requests_in_flight_limit{job="mars", instance="a:8000", station="sat-limit"}'
+        values: '64x30'
+      - series: 'mars_process_cpu_seconds_total{job="mars", instance="a:8000", station="sat-limit"}'
+        values: '0+0.25x30'
+      - series: 'mars_http_requests_in_flight{job="mars", instance="b:8000", station="sat-nolimit"}'
+        values: '48x30'
+      - series: 'mars_http_requests_in_flight_limit{job="mars", instance="b:8000", station="sat-nolimit"}'
+        values: '0x30'
+      - series: 'mars_process_cpu_seconds_total{job="mars", instance="b:8000", station="sat-nolimit"}'
+        values: '0+0.25x30'
+      - series: 'mars_process_cpu_seconds_total{job="mars", instance="c1:8000", station="sat-hot"}'
+        values: '0+0.5x30'
+      - series: 'mars_process_cpu_seconds_total{job="mars", instance="c2:8000", station="sat-hot"}'
+        values: '0+1.5x30'
+    promql_expr_test:
+      - expr: mars:saturation_ratio
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:saturation_ratio{station="sat-limit"}'
+            value: 0.75
+          - labels: 'mars:saturation_ratio{station="sat-nolimit"}'
+            value: 0.25
+          - labels: 'mars:saturation_ratio{station="sat-hot"}'
+            value: 1
+      - expr: mars:node_load_ratio{station="sat-hot"}
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:node_load_ratio{station="sat-hot", instance="c1:8000"}'
+            value: 0.5
+          - labels: 'mars:node_load_ratio{station="sat-hot", instance="c2:8000"}'
+            value: 1

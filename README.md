@@ -18,7 +18,7 @@ built-in simulator.
 web/            MARS display (Vite + React + WebGL2)        → web/README.md
 probe/          mars-probe Python package                   → probe/README.md
 examples/demo/  demo FastAPI service + load generator       → examples/demo/README.md
-deploy/         docker compose, Prometheus config, Caddy    (step 03)
+deploy/         docker compose, Prometheus config           → deploy/README.md
 docs/           plan: steps, ADRs, open questions           → docs/README.md
 ```
 
@@ -45,8 +45,16 @@ Two stations, the chaos API and the Docker image are in
 
 ## Run the whole stack
 
-_Placeholder: the Docker Compose stack (`docker compose -f deploy/compose.yaml up`) arrives in
-step 03._
+```bash
+docker compose -f deploy/compose.yaml --profile demo up -d --build
+```
+
+This starts Prometheus, two demo stations (`api`, `search`), the load generator and MARS.
+Open <http://localhost:8080>. Prometheus is on <http://localhost:9090> (this machine only).
+Without `--profile demo` only MARS and Prometheus start, for your own servers. Adding a
+server, ports and troubleshooting are in [deploy/README.md](deploy/README.md).
+
+The display still runs on its simulator; reading Prometheus arrives in step 07.
 
 ## Docs
 

@@ -1,0 +1,49 @@
+# MARS: static files, the Prometheus proxy and the config volume on one origin (ADR-0004).
+{
+	# No admin API and no automatic HTTPS: this sits on a LAN port (TLS is out of scope).
+	admin off
+	auto_https off
+}
+
+:8080 {
+	encode zstd gzip
+
+	# /prom/api/v1/query → Prometheus /api/v1/query. No auth here: see deploy/README.md.
+	# Prometheus runs with --web.enable-lifecycle; reload and quit stay off the LAN-facing
+	# port (use localhost:9090 for those).
+	handle /prom/-/reload {
+		respond 403
+	}
+	handle /prom/-/quit {
+		respond 403
+	}
+	handle_path /prom/* {
+		reverse_proxy {$PROMETHEUS_URL:prometheus:9090}
+	}
+
+	# Config documents (step 06). Never cached, so an edited mars.json shows up on reload.
+	# No directory listing: /config/ answers 404.
+	handle_path /config/* {
+		root * /config
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	# Vite fingerprints everything under /assets, so a file that exists can be cached for good.
+	# A missing one is a plain 404 (no SPA fallback, no long cache).
+	handle /assets/* {
+		root * /srv
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else: the file if there is one, otherwise index.html (SPA fallback). Unhashed,
+	# so always revalidate.
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

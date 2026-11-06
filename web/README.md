@@ -11,7 +11,10 @@ npm run smoke    # build, open pages 1–5 headless, fail on errors, write snaps
 ```
 
 This is the `web/` part of the MARS monorepo; see the [root README](../README.md) for the
-whole system. The dev server proxies `/prom` to Prometheus on `localhost:9090`.
+whole system. The dev server proxies `/prom` to Prometheus on `localhost:9090`, which is where
+the compose stack in [deploy/](../deploy/README.md) publishes it. The production image
+([Dockerfile](Dockerfile), [Caddyfile](Caddyfile)) serves the build with Caddy on port 8080 and
+proxies `/prom/*` the same way.
 
 ## What's on the panel
 

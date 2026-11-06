@@ -1,0 +1,98 @@
+# MARS stack (ADR-0004).
+#   docker compose -f deploy/compose.yaml up -d                     # MARS + Prometheus
+#   docker compose -f deploy/compose.yaml --profile demo up -d      # + demo stations, loadgen
+# MARS: http://localhost:8080 · Prometheus: http://localhost:9090 (this machine only)
+name: mars
+
+# One image for both demo stations and the loadgen. Each service carries the same build so any
+# of them can be started alone; the build is cached after the first.
+x-demo: &demo
+  profiles: [demo]
+  build:
+    context: ..
+    dockerfile: examples/demo/Dockerfile
+  image: mars-demo:local
+  restart: unless-stopped
+
+x-demo-station: &demo-station
+  <<: *demo
+  healthcheck:
+    # The image has no curl. /healthz isn't timed by the probe, so this adds no series.
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+    interval: 5s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+
+services:
+  mars:
+    build: ../web
+    image: mars-web:local
+    ports:
+      - "8080:8080"
+    environment:
+      PROMETHEUS_URL: prometheus:9090
+    volumes:
+      # Config documents, served at /config/ (step 06). May stay empty.
+      - ./config:/config:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=35d
+      - --enable-feature=exemplar-storage
+      - --web.enable-lifecycle
+    ports:
+      # Prometheus has no auth, so it is only published on loopback (for `npm run dev`, which
+      # proxies /prom to localhost:9090). MARS reaches it over the compose network.
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
+      # The recording rules, straight from the probe package (the only copy, ADR-0003).
+      - ../probe/src/mars_probe/prometheus:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  demo-api:
+    <<: *demo-station
+    environment:
+      MARS_STATION: api
+
+  demo-search:
+    <<: *demo-station
+    environment:
+      MARS_STATION: search
+      # A slower station, so the two read differently on the display.
+      DEMO_LATENCY_SCALE: "1.6"
+
+  loadgen:
+    <<: *demo
+    command: ["python", "-m", "demo.loadgen"]
+    environment:
+      LOADGEN_TARGETS: http://demo-api:8000,http://demo-search:8000
+      # A compressed 10-minute day, so a demo shows the daily swing.
+      LOADGEN_DAY_SECONDS: "600"
+    depends_on:
+      demo-api:
+        condition: service_healthy
+      demo-search:
+        condition: service_healthy
+
+volumes:
+  prometheus-data:

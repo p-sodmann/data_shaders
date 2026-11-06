@@ -1,0 +1,21 @@
+# Prometheus for MARS (ADR-0002). Mounted by deploy/compose.yaml.
+global:
+  # 1 s everywhere: MARS shows per-second values and its Signal page looks at short periods.
+  scrape_interval: 1s
+  scrape_timeout: 1s
+  evaluation_interval: 1s
+
+# The rules are mounted straight from the probe package, the only copy (ADR-0003).
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: mars
+    # The probe sets `station` itself; never let Prometheus rename it to exported_station.
+    honor_labels: true
+    # One file per server under deploy/prometheus/targets/. New files are picked up without a
+    # restart; the refresh interval is a fallback for bind mounts where file events don't arrive.
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/*.yml
+        refresh_interval: 10s

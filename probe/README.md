@@ -59,6 +59,20 @@ the display: see [ADR-0003](../docs/adr/0003-metric-contract.md). In short: `mar
 `mars_stage_duration_seconds` and `mars_signal`. `route` is always the route template
 (mount prefixes included), or `<unmatched>`; `region` is `unknown` until step 11.
 
+## Prometheus
+
+The recording rules MARS reads ship inside the package. Load them into your Prometheus, or use
+the compose stack in [deploy/](../deploy/README.md), which mounts them directly:
+
+```bash
+mars-probe rules > mars.rules.yml                       # the mars:* recording rules (ADR-0003)
+mars-probe scrape-config --target myhost:8000           # a file_sd target snippet
+```
+
+Scrape every 1 s with `honor_labels: true`, evaluate rules every 1 s, and run Prometheus with
+`--enable-feature=exemplar-storage` for exemplars. See
+[deploy/prometheus/prometheus.yml](../deploy/prometheus/prometheus.yml).
+
 ## Develop
 
 ```bash
@@ -67,4 +81,7 @@ uv sync --extra dev
 uv run pytest -q                  # -m "not slow" skips the overhead benchmark
 uv run ruff check . && uv run ruff format --check .
 uv run mars-probe version
+bash scripts/test-rules.sh        # promtool tests for the rules (local promtool, docker or podman)
 ```
+
+`uv run pytest` also runs the rule tests when `promtool` is on `PATH`, and skips them otherwise.

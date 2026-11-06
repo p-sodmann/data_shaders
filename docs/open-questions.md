@@ -28,6 +28,12 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 - **Exposure.** Prometheus has no auth. Is MARS LAN-only, or does Caddy need basic auth or
   forward auth?
+- **Lifecycle API.** Step 03 runs Prometheus with `--web.enable-lifecycle`. Caddy refuses
+  `/prom/-/reload` and `/-/quit` with 403, and :9090 is loopback-only, but the rest of the
+  query API is open on :8080. Revisit together with auth.
+- **Demo targets without the demo.** `deploy/prometheus/targets/demo.yml` is always mounted, so
+  a stack without `--profile demo` shows two down targets until the file is deleted. Move demo
+  targets into a profile-only mount, or accept it?
 - **Remote servers.** Does Prometheus scrape the servers over the network (firewall, TLS), or
   should each server push via remote-write or an agent?
 
@@ -47,9 +53,11 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 ## Demo
 
-- **Podman.** The dev machine runs Podman, not Docker Desktop. The demo image builds with both
-  `podman build` and the Docker CLI over the Podman socket (step 02). Should step 03 also check
-  `podman compose` (healthchecks and profiles behave slightly differently)?
+- **Podman / compose.** The dev machine runs Podman, not Docker Desktop, and has no compose
+  provider. Step 03 checked the stack with plain `podman run` (same images, mounts, flags,
+  healthchecks) but never ran `deploy/compose.yaml` itself. Someone needs to run
+  `docker compose -f deploy/compose.yaml --profile demo up -d --build` once (Docker, or Podman
+  with `docker-compose`/`podman-compose` installed) and close step 03's last criterion.
 - **Daily phase in UTC.** The loadgen's daily sine uses UTC wall-clock time (low at 03:00, high
   at 15:00 UTC), while the simulator uses the browser's local time. Should the loadgen take a
   `LOADGEN_TZ` so a demo peaks in the viewer's afternoon?
@@ -65,6 +73,10 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   wanted?
 
 ## Resolved
+
+- **Recording-rule edge cases:** no traffic → latency and ratio rules absent, throughput 0;
+  `node_up` joins with `mars_info` as the many side so a version change doesn't break it;
+  region rules leave out `region="unknown"`. 2026-11-06, step 03.
 
 - **Repo layout:** monorepo ([ADR-0001](adr/0001-monorepo.md)), 2026-11-05.
 - **Backend:** Prometheus ([ADR-0002](adr/0002-prometheus-backend.md)), 2026-11-05.

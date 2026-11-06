@@ -28,6 +28,7 @@ build-backend = "hatchling.build"
 path = "src/mars_probe/_version.py"
 
 [tool.hatch.build.targets.wheel]
+# Everything under the package ships, including prometheus/mars.rules.yml (`mars-probe rules`).
 packages = ["src/mars_probe"]
 
 [tool.pytest.ini_options]
