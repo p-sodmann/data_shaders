@@ -1,26 +1,36 @@
-import { CONFIG } from './config.js';
-import { createStation } from './station/station.js';
+import { loadDoc, deviceSettings } from './config/load.js';
+import { createDocStore } from './config/store.js';
+import { standardPages } from './config/presets.js';
+import { createStationManager } from './station/manager.js';
 
-// The device's one station, built from the URL parameters. Step 06 replaces
-// this with the stations of the config document.
-export const station = createStation({
-  id: 'main',
-  name: CONFIG.station,
-  source:
-    CONFIG.source === 'sim'
-      ? { kind: 'sim', hosts: CONFIG.hosts, speed: CONFIG.speed }
-      : { kind: 'poll', url: CONFIG.source, hosts: CONFIG.hosts },
-});
-station.start();
+// Start-up: load the config document, put it in the store, and keep one running
+// station per document entry. The manager follows the store, so any later
+// change to the document (the console handle below now, the service panel from
+// step 08) adds, removes or rebuilds stations live.
+export async function boot() {
+  const { search } = location;
+  const { doc, origin, problems } = await loadDoc({ search });
+  for (const p of problems) console.warn(`[MARS] config ${p}`);
 
-// Debug flag: ?stations=2 starts a second sim station (seed 2) that nothing
-// displays, and logs both stations' latest latency once per second, to show
-// that stations share no state.
-if (CONFIG.stations >= 2) {
-  const extra = createStation({ id: 'sim2', name: 'SIM-02', source: { kind: 'sim', hosts: CONFIG.hosts, seed: 2, speed: CONFIG.speed } });
-  extra.start();
-  setInterval(() => {
-    const lat = (s) => s.store.latest?.latency?.toFixed(2) ?? '-';
-    console.info(`[MARS] stations ${station.id}=${lat(station)}ms ${extra.id}=${lat(extra)}ms`);
-  }, 1000);
+  const docStore = createDocStore({ doc, origin });
+  const manager = createStationManager();
+  // subscribed before React, so stations are in place when the page re-renders
+  docStore.subscribe(() => manager.sync(docStore.getDoc().stations));
+  manager.sync(docStore.getDoc().stations);
+
+  // Debug handle for the devtools console, e.g.
+  //   __mars.setDoc((d) => ({ ...d, stations: [...d.stations, { id: 'b', name: 'B-01', source: { kind: 'sim', seed: 3 } }] }))
+  // setDoc throws on an invalid document and keeps the current one. App adds stats().
+  window.__mars = {
+    getDoc: docStore.getDoc,
+    setDoc: docStore.setDoc,
+    save: docStore.save,
+    get origin() {
+      return docStore.origin;
+    },
+    stations: manager.list,
+    standardPages,
+  };
+
+  return { docStore, manager, device: deviceSettings(docStore.getDoc(), { search }) };
 }

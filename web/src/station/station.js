@@ -30,11 +30,23 @@ export function createStation(def) {
     getSpeed: () => source.speed,
   });
 
-  // The long memory for page 5, kept per source and station. The key format
-  // predates stations; keep it so saved IndexedDB history still matches.
-  const almanac = createAlmanac({ profile, key: `${source.kind}:${src.kind === 'sim' ? 'sim' : src.url}:${profile.name}` });
+  // The long memory for page 5, one IndexedDB record per station id and source
+  // kind (so a simulated past never shows up as a real one). Before stations had
+  // ids the record was keyed by source and name; that one is copied over once.
+  const almanac = createAlmanac({
+    profile,
+    key: `station:${profile.id}:${source.kind}`,
+    legacyKey: `${source.kind}:${src.kind === 'sim' ? 'sim' : src.url}:${profile.name}`,
+  });
 
+  // The page 4 analyser is costly (FFTs, epoch folding over 4 h), so it exists
+  // only while a mounted panel holds a reference (retainSignal). It is derived
+  // entirely from the store, so dropping it loses nothing. The drop waits a
+  // tick: on a page switch the old page releases before the new one retains,
+  // and both may hold the same analyser.
   let signal = null;
+  let signalRefs = 0;
+  let dropTimer = null;
   let started = false;
 
   return {
@@ -44,10 +56,27 @@ export function createStation(def) {
     source,
     store,
     almanac,
-    // the page 4 analyser is costly to set up, so only stations that show it pay for it
     get signal() {
       if (!signal) signal = createSignal(store, profile);
       return signal;
+    },
+    get signalRefs() {
+      return signalRefs;
+    },
+    // returns release()
+    retainSignal() {
+      signalRefs++;
+      clearTimeout(dropTimer);
+      let held = true;
+      return () => {
+        if (!held) return;
+        held = false;
+        if (--signalRefs === 0) {
+          dropTimer = setTimeout(() => {
+            if (signalRefs === 0) signal = null;
+          }, 0);
+        }
+      };
     },
 
     start() {
@@ -84,6 +113,8 @@ export function createStation(def) {
       started = false;
       source.stop();
       almanac.dispose();
+      clearTimeout(dropTimer);
+      signal = null;
     },
   };
 }

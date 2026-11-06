@@ -19,7 +19,9 @@ const DB = 'mars', STORE = 'almanac', SAVE_MS = 60000;
 
 export const slotOf = (mi) => ((mi % N) + N) % N;
 
-export function createAlmanac({ profile, key }) {
+// key: this almanac's IndexedDB record. legacyKey: an older record for the same
+// station, copied to `key` the first time `key` doesn't exist yet.
+export function createAlmanac({ profile, key, legacyKey = null }) {
   const { thresh, slo, burnAlerts } = profile;
   const BUDGET = 1 - slo.target;
   const m = new Int32Array(N).fill(-1);
@@ -93,11 +95,18 @@ export function createAlmanac({ profile, key }) {
   async function load(nowMin) {
     try {
       db = await open();
-      const rec = await new Promise((res, rej) => {
-        const q = db.transaction(STORE).objectStore(STORE).get(key);
-        q.onsuccess = () => res(q.result);
-        q.onerror = () => rej(q.error);
-      });
+      const get = (k) =>
+        new Promise((res, rej) => {
+          const q = db.transaction(STORE).objectStore(STORE).get(k);
+          q.onsuccess = () => res(q.result);
+          q.onerror = () => rej(q.error);
+        });
+      let rec = await get(key);
+      if (!rec && legacyKey && legacyKey !== key) {
+        rec = await get(legacyKey);
+        // keep the old record: an older build on the same origin still reads it
+        if (rec) db.transaction(STORE, 'readwrite').objectStore(STORE).put(rec, key);
+      }
       if (!rec || rec.v !== 1 || rec.m.length !== N) return 0;
       let n = 0;
       for (let i = 0; i < N; i++) {
@@ -123,7 +132,8 @@ export function createAlmanac({ profile, key }) {
     }
   }
   const timer = setInterval(save, SAVE_MS);
-  addEventListener('pagehide', save);
+  // optional, so stations can run under unit tests (no window there)
+  globalThis.addEventListener?.('pagehide', save);
 
   // ---------- derived views ----------
   let cache = { v: -1 };
@@ -289,7 +299,7 @@ export function createAlmanac({ profile, key }) {
     },
     dispose() {
       clearInterval(timer);
-      removeEventListener('pagehide', save);
+      globalThis.removeEventListener?.('pagehide', save);
       save();
     },
   };

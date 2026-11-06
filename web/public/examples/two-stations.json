@@ -1,0 +1,307 @@
+{
+  "version": 1,
+  "device": {
+    "finish": "graphite",
+    "fps": 60,
+    "dpr": 2,
+    "cycle": 0,
+    "locked": false
+  },
+  "stations": [
+    {
+      "id": "main",
+      "name": "INFERENCE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 32,
+        "seed": 1
+      }
+    },
+    {
+      "id": "search",
+      "name": "SEARCH-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 24,
+        "seed": 2
+      },
+      "thresh": {
+        "warn": 20,
+        "crit": 30,
+        "max": 50
+      },
+      "slo": {
+        "target": 0.999,
+        "days": 30
+      },
+      "home": {
+        "lat": 37.6,
+        "lon": -122.4
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "twin",
+      "name": "Twin",
+      "panels": [
+        {
+          "id": "tape-main",
+          "type": "tape",
+          "station": "main",
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "tape-search",
+          "type": "tape",
+          "station": "search",
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "lat-main",
+          "type": "readout",
+          "station": "main",
+          "x": 0,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "latency"
+          }
+        },
+        {
+          "id": "err-main",
+          "type": "readout",
+          "station": "main",
+          "x": 2,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "errors"
+          }
+        },
+        {
+          "id": "lat-search",
+          "type": "readout",
+          "station": "search",
+          "x": 4,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "latency"
+          }
+        },
+        {
+          "id": "err-search",
+          "type": "readout",
+          "station": "search",
+          "x": 6,
+          "y": 4,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "errors"
+          }
+        },
+        {
+          "id": "nodes-search",
+          "type": "matrix",
+          "station": "search",
+          "x": 8,
+          "y": 4,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "log",
+          "type": "log",
+          "station": "*",
+          "x": 0,
+          "y": 6,
+          "w": 8,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "rules-search",
+          "type": "rules",
+          "station": "search",
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "sweep",
+      "name": "Sweep",
+      "panels": [
+        {
+          "id": "radar-main",
+          "type": "radar",
+          "station": "main",
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "radar-search",
+          "type": "radar",
+          "station": "search",
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "contacts-main",
+          "type": "contacts",
+          "station": "main",
+          "x": 0,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "contacts-search",
+          "type": "contacts",
+          "station": "search",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "search-signal",
+      "name": "Signal",
+      "panels": [
+        {
+          "id": "spectrum",
+          "type": "spectrum",
+          "station": "search",
+          "x": 0,
+          "y": 0,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "waterfall",
+          "type": "waterfall",
+          "station": "search",
+          "x": 0,
+          "y": 3,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "xy",
+          "type": "xy",
+          "station": "search",
+          "x": 7,
+          "y": 0,
+          "w": 5,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "correlator",
+          "type": "correlator",
+          "station": "search",
+          "x": 0,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "rhythms",
+          "type": "rhythms",
+          "station": "search",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "search-almanac",
+      "name": "Almanac",
+      "panels": [
+        {
+          "id": "dial",
+          "type": "dial",
+          "station": "search",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "heatmap",
+          "type": "heatmap",
+          "station": "search",
+          "x": 4,
+          "y": 0,
+          "w": 8,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "budget",
+          "type": "budget",
+          "station": "search",
+          "x": 0,
+          "y": 6,
+          "w": 3,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "burn",
+          "type": "burn",
+          "station": "search",
+          "x": 3,
+          "y": 6,
+          "w": 5,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "logbook",
+          "type": "logbook",
+          "station": "search",
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    }
+  ]
+}

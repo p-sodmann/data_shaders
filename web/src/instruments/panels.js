@@ -1,6 +1,7 @@
 import { createDotMatrix } from './dotmatrix.js';
 import { hms } from '../data/telemetry.js';
 import { fmtPeriod } from '../data/signal.js';
+import { worstStation } from '../station/manager.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const centered = (api, str, color) => {
@@ -38,8 +39,10 @@ export function createReadout(station, options = {}) {
 // Teletype event log: newest at the bottom, typed out one character at a time.
 const TYPE_MS = 24;
 const LEVEL_COLOR = [1, 2, 3];
-export function createLog(station, options = {}) {
-  const { store } = station;
+// Built on a station, or on the device (a panel bound to '*'), in which case it
+// merges every station's events and prefixes each line with the station name.
+export function createLog(target, options = {}) {
+  const events = target.stations ? mergedEvents(target) : () => target.store.events;
   return createDotMatrix({
     crt: { decay: 0.78 },
     layout: (w, h) => clamp(h / 57, 2.2, 3.6),
@@ -47,11 +50,11 @@ export function createLog(station, options = {}) {
       const lines = Math.max(1, Math.floor((api.h + 1) / 8));
       const cols = Math.max(1, Math.floor((api.w - 1) / 6));
       // events arriving together are typed one after another
-      const recent = store.events.slice(-(lines + 12));
+      const recent = events().slice(-(lines + 12));
       let prevEnd = -Infinity;
       const shown = [];
       for (const e of recent) {
-        const line = `${hms(e.t)} ${e.text}`.slice(0, cols);
+        const line = `${hms(e.t)} ${e.from ? `${e.from} ` : ''}${e.text}`.slice(0, cols);
         const start = Math.max(e.wall, prevEnd);
         prevEnd = start + line.length * TYPE_MS;
         if (start <= f.now) shown.push({ e, line, n: Math.min(line.length, Math.floor((f.now - start) / TYPE_MS)) });
@@ -61,7 +64,8 @@ export function createLog(station, options = {}) {
       visible.forEach(({ e, line, n }, i) => {
         const y = y0 + i * 8;
         let x = 1;
-        for (let c = 0; c < n; c++) x = api.text(x, y, line[c], c < 8 ? 4 : LEVEL_COLOR[e.level]);
+        const dim = e.from ? 9 + e.from.length : 8; // time and station name
+        for (let c = 0; c < n; c++) x = api.text(x, y, line[c], c < dim ? 4 : LEVEL_COLOR[e.level]);
         const last = i === visible.length - 1;
         if (last && (n < line.length || f.now % 1000 < 550) && x + 5 < api.w) api.text(x, y, '█', 5);
       });
@@ -69,12 +73,31 @@ export function createLog(station, options = {}) {
   });
 }
 
-export function createClock(station, options = {}) {
-  const { store } = station;
+// Every station's events in arrival order, as one list. Rebuilt only when some
+// station logged something or the station list changed. Backfilled events have
+// no wall time (-Infinity) and sort by their own time, before live ones.
+function mergedEvents(device) {
+  let list = null, last = [], merged = [];
+  const byArrival = (a, b) => (a.wall === b.wall ? a.t - b.t : a.wall < b.wall ? -1 : 1);
+  return () => {
+    const stations = device.stations;
+    if (list !== stations || stations.some((s, i) => s.store.events.at(-1) !== last[i])) {
+      list = stations;
+      last = stations.map((s) => s.store.events.at(-1));
+      merged = stations.flatMap((s) => s.store.events.map((e) => ({ ...e, from: s.name }))).sort(byArrival);
+    }
+    return merged;
+  };
+}
+
+// The housing clock. On the device it follows the first station, whose time
+// base the S key sets; with no station running it shows wall time.
+export function createClock(target, options = {}) {
+  const now = target.stations ? () => (target.stations[0]?.store.now() ?? Date.now() / 1000) : () => target.store.now();
   return createDotMatrix({
     layout: (w, h) => Math.max(2, Math.min(h / 10, w / 46)),
     draw(api) {
-      centered(api, hms(store.now()), 1);
+      centered(api, hms(now()), 1);
     },
   });
 }
@@ -86,16 +109,28 @@ function elapsed(sec) {
   if (sec >= 3600) return `${Math.floor(sec / 3600)}H${pad(Math.floor(sec / 60) % 60)}`;
   return `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`;
 }
-export function createStatus(station, options = {}) {
-  const { store } = station;
+// The housing's system state. On the device (several stations) it shows the
+// worst station's state and, unless all is nominal, names that station.
+export function createStatus(target, options = {}) {
+  const pick = target.stations ? () => worstStation(target.stations) : () => target;
+  // Dots across the tube: 78 fits the state and its age. A station name needs
+  // more, so the dots shrink to fit (sized from the previous frame's text).
+  let need = 78;
   return createDotMatrix({
-    layout: (w, h) => Math.max(2, Math.min(h / 10, w / 78)),
+    layout: (w, h) => Math.max(1.5, Math.min(h / 10, w / need)),
     draw(api, f) {
+      const station = pick();
+      const y = Math.floor((api.h - 7) / 2);
+      if (!station) {
+        api.text(1, y, 'NO STATION', 4, true);
+        return;
+      }
+      const { store } = station;
       const st = store.state;
       const blinkOff = st === 'INCIDENT' && f.now % 1000 > 620;
-      const label = st;
+      const label = target.stations?.length > 1 && st !== 'NOMINAL' ? `${st} · ${station.name}` : st;
       const dur = store.stateSince === null ? '' : elapsed(store.now() - store.stateSince);
-      const y = Math.floor((api.h - 7) / 2);
+      need = Math.max(78, api.measure(label, true) + api.measure(dur, true) + 10);
       api.text(1, y, label, blinkOff ? 4 : STATE_COLOR[st], true);
       api.text(api.w - 1 - api.measure(dur, true), y, dur, 4, true);
     },

@@ -1,6 +1,7 @@
 // Headless smoke test: build, serve the build with `vite preview`, open every page in Chromium
-// and fail on console errors, page errors or missing module headers. Then switch pages 50 times
-// and fail if the engine's GPU object count grew. Screenshots go to snapshots/ so a person can
+// and fail on console errors, page errors or missing module headers: the built-in default
+// document, the two-station example (?config=) and an old kiosk URL (legacy parameters, v0
+// migration). Then switch pages 50 times and fail if the engine's GPU object count grew. Screenshots go to snapshots/ so a person can
 // compare them; nothing here diffs pixels.
 //
 //   npm run smoke            (SMOKE_SKIP_BUILD=1 reuses an existing dist/)
@@ -56,23 +57,91 @@ async function startPreview() {
   throw new Error(`vite preview did not come up on ${BASE}:\n${log}`);
 }
 
-async function checkPage(browser, n, expected) {
+// The two-station example document (public/examples/two-stations.json): its pages and their
+// module numbers, plus checks that only make sense with several stations.
+const TWO = '?config=/examples/two-stations.json';
+const TWO_PAGES = {
+  1: ['01', '02', '03', '04', '05', '06', '07', '08', '09'],
+  2: ['10', '11', '12', '13'],
+  3: ['14', '15', '16', '17', '18'],
+  4: ['19', '20', '21', '22', '23'],
+};
+
+// An old kiosk URL from before the config document, served a stub JSON feed.
+const LEGACY = '?source=/telemetry.json&station=edge-eu-2&hosts=48';
+const telemetry = () =>
+  JSON.stringify({
+    timestamp: Date.now(),
+    latency: 14 + Math.random() * 3,
+    throughput: 320,
+    errorRate: 0.002,
+    saturation: 0.4,
+    hosts: Array.from({ length: 48 }, (_, i) => ({ load: 0.3 + (i % 5) * 0.05, state: 'ok' })),
+  });
+
+const text = (page, sel) => page.$$eval(sel, (els) => els.map((e) => e.textContent.trim()));
+
+async function checkPage(browser, query, expected, shot, extra) {
   // A fresh context per page: the app remembers the last page in localStorage.
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await context.newPage();
   const errors = [];
   page.on('console', (m) => m.type() === 'error' && errors.push(`console.error: ${m.text()}`));
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  await page.route('**/telemetry.json', (r) => r.fulfill({ contentType: 'application/json', body: telemetry() }));
 
-  await page.goto(`${BASE}?page=${n}`, { waitUntil: 'load' });
+  await page.goto(`${BASE}${query}`, { waitUntil: 'load' });
   await page.waitForTimeout(SETTLE_MS);
 
-  const nums = await page.$$eval('.mod-head .num', (els) => els.map((e) => e.textContent.trim()));
+  const nums = await text(page, '.mod-head .num');
   const missing = expected.filter((num) => !nums.includes(num));
   if (missing.length) errors.push(`missing module headers: ${missing.join(', ')}`);
+  if (extra) errors.push(...(await extra(page)));
 
-  await page.screenshot({ path: join(SNAPSHOTS, `page-${n}.png`) });
+  await page.screenshot({ path: join(SNAPSHOTS, shot) });
   await context.close();
+  return errors;
+}
+
+// Two stations: the header counts them, module headers name them, the merged log is there,
+// and each station keeps its own almanac record in IndexedDB.
+async function twoStationExtras(page) {
+  const errors = [];
+  const plates = await text(page, '.plate-val');
+  if (!plates.includes('2 STATIONS')) errors.push(`station plate: ${plates.join(' | ')}`);
+  const names = await text(page, '.mod-head .name');
+  for (const want of ['· INFERENCE-01', '· SEARCH-01']) {
+    if (!names.some((n) => n.endsWith(want))) errors.push(`no module header ending "${want}"`);
+  }
+  const metas = await text(page, '.mod-head .meta');
+  if (!metas.includes('Teletype · all stations')) errors.push('merged event log missing');
+  const keys = await page.evaluate(async () => {
+    for (const s of window.__mars.stations()) s.almanac.save();
+    await new Promise((r) => setTimeout(r, 300));
+    const db = await new Promise((res, rej) => {
+      const r = indexedDB.open('mars');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return new Promise((res) => {
+      const q = db.transaction('almanac').objectStore('almanac').getAllKeys();
+      q.onsuccess = () => res(q.result);
+    });
+  });
+  for (const k of ['station:main:SIMULATED', 'station:search:SIMULATED']) {
+    if (!keys.includes(k)) errors.push(`almanac record "${k}" missing (have ${keys.join(', ')})`);
+  }
+  return errors;
+}
+
+async function legacyExtras(page) {
+  const errors = [];
+  const plates = await text(page, '.plate-val');
+  if (!plates.includes('EDGE-EU-2')) errors.push(`station plate: ${plates.join(' | ')}`);
+  const serial = (await text(page, '.serial'))[0] ?? '';
+  if (!/Source LIVE · 48 nodes/.test(serial)) errors.push(`footer: ${serial}`);
+  const latest = await page.evaluate(() => window.__mars.stations()[0].store.latest?.throughput);
+  if (latest !== 320) errors.push(`no samples from /telemetry.json (latest throughput ${latest})`);
   return errors;
 }
 
@@ -84,12 +153,12 @@ async function checkSwitching(browser) {
   const errors = [];
   page.on('console', (m) => m.type() === 'error' && errors.push(`console.error: ${m.text()}`));
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  const stats = () => page.evaluate(() => window.__MARS__?.stats());
+  const stats = () => page.evaluate(() => window.__mars?.stats?.());
 
   await page.goto(`${BASE}?page=1`, { waitUntil: 'load' });
   await page.waitForTimeout(SETTLE_MS);
   const before = await stats();
-  if (!before) return { errors: ['window.__MARS__.stats() is missing'] };
+  if (!before) return { errors: ['window.__mars.stats() is missing'] };
   let peak = before.textures;
   for (let i = 0; i < SWITCHES; i++) {
     await page.keyboard.press('ArrowRight');
@@ -115,17 +184,30 @@ async function main() {
     args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
   });
   let failed = 0;
+  let checks = 0;
   try {
-    for (const [n, expected] of Object.entries(PAGES)) {
-      const errors = await checkPage(browser, n, expected);
+    const runs = [
+      ...Object.entries(PAGES).map(([n, expected]) => ({ label: `page ${n}`, query: `?page=${n}`, expected, shot: `page-${n}.png` })),
+      ...Object.entries(TWO_PAGES).map(([n, expected]) => ({
+        label: `two stations page ${n}`,
+        query: `${TWO}&page=${n}`,
+        expected,
+        shot: `two-stations-${n}.png`,
+        extra: n === '1' ? twoStationExtras : null,
+      })),
+      { label: 'legacy URL', query: `${LEGACY}&page=1`, expected: PAGES[1], shot: 'legacy-url.png', extra: legacyExtras },
+    ];
+    for (const run of runs) {
+      const errors = await checkPage(browser, run.query, run.expected, run.shot, run.extra);
       if (errors.length) {
         failed++;
-        console.log(`✗ page ${n}`);
+        console.log(`✗ ${run.label}`);
         for (const e of errors) console.log(`    ${e}`);
       } else {
-        console.log(`✓ page ${n}  modules ${expected[0]}–${expected.at(-1)}  → snapshots/page-${n}.png`);
+        console.log(`✓ ${run.label}  modules ${run.expected[0]}–${run.expected.at(-1)}  → snapshots/${run.shot}`);
       }
     }
+    checks = runs.length + 1;
     const sw = await checkSwitching(browser);
     const fmt = (s) => (s ? Object.entries(s).map(([k, v]) => `${k} ${v}`).join(', ') : '-');
     if (sw.errors.length) {
@@ -140,7 +222,7 @@ async function main() {
     preview.kill();
   }
   if (failed) {
-    console.log(`smoke: ${failed} of ${Object.keys(PAGES).length + 1} checks failed`);
+    console.log(`smoke: ${failed} of ${checks} checks failed`);
     process.exit(1);
   }
   console.log('smoke: ok');

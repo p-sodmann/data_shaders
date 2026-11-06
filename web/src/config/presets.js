@@ -1,4 +1,6 @@
-// The built-in pages: today's five pages bound to the station `main`.
+// The five standard pages, as a generator so a document can have them for
+// any station ("the 5 standard pages for station X"). The built-in default
+// document binds them to the station `main`.
 // Positions are on the 12 × 8 deck grid (ADR-0005). Rows 0–5 are the old
 // deck and rows 6–7 the old bank below it, which keeps their 72 : 28 split
 // (the old split was about 71 : 29 at 1920 × 1080).
@@ -6,9 +8,14 @@
 // Panel order is module-number order: numbers are assigned in panel order
 // across pages, and the narrow-screen layout stacks panels in this order.
 
-const panel = (id, type, x, y, w, h, options = {}) => ({ id, type, station: 'main', x, y, w, h, options });
+// `prefix` goes in front of every page id, so the standard pages of two
+// stations can sit in one document (page ids are unique per document).
+export function standardPages(station, prefix = '') {
+  const panel = (id, type, x, y, w, h, options = {}) => ({ id, type, station, x, y, w, h, options });
+  return PAGES(panel).map((p) => ({ ...p, id: prefix + p.id }));
+}
 
-export const DEFAULT_PAGES = [
+const PAGES = (panel) => [
   {
     id: 'tape',
     name: 'Tape',
@@ -67,3 +74,5 @@ export const DEFAULT_PAGES = [
     ],
   },
 ];
+
+export const DEFAULT_PAGES = standardPages('main');

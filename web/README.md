@@ -7,7 +7,9 @@ all CRT phosphor shaders.
 ```bash
 npm install
 npm run dev      # then open the printed URL, press F for fullscreen
-npm run smoke    # build, open pages 1–5 headless, fail on errors, write snapshots/page-N.png
+npm test         # unit tests (vitest): config schema, migrations, load order, station manager
+npm run smoke    # build, open every page headless (default doc, two-station example, old URL),
+                 # fail on errors, write snapshots/*.png
 ```
 
 This is the `web/` part of the MARS monorepo; see the [root README](../README.md) for the
@@ -79,18 +81,50 @@ Colour is a signal, never decoration: mint is nominal, amber is warn, orange is 
 
 ## Keys
 
-`1`–`5` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident · `S` time base ×1 / ×10 / ×60 · `B` graphite or ivory finish.
+`1`–`9` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station · `B` graphite or ivory finish.
 The pointer hides after 2.5 s.
+
+## The config document
+
+Stations and pages come from one JSON document ([ADR-0005](../docs/adr/0005-config-document.md),
+schema in [src/config/schema.js](src/config/schema.js)). The first of these wins:
+
+1. `?config=<url>`, e.g. `?config=/examples/two-stations.json` (shipped in [public/examples/](public/examples/))
+2. the old station parameters `?source=`, `?station=`, `?hosts=`, `?speed=` (still work, see below)
+3. `localStorage["mars.config"]`, this display's saved copy
+4. `/config/mars.json`, the Docker config volume ([deploy/config/](../deploy/config/))
+5. the built-in default: one simulated station `main` with the five standard pages
+
+A document that doesn't validate is skipped with a `[MARS] config …` warning in the console.
+Documents from the URL (1, 2) are never saved over this display's copy.
+
+Several stations run side by side. With more than one, module headers carry the station name,
+the alarm lamp and the System tube show the worst station, and an event log bound to
+`"station": "*"` merges every station's events.
+
+For now there is no editor (that's step 08). In the devtools console:
+
+```js
+__mars.getDoc()                       // the current document (frozen)
+__mars.setDoc((d) => ({ ...d, stations: [...d.stations,
+  { id: 'b', name: 'B-01', source: { kind: 'sim', seed: 3 } }] }))   // live; throws if invalid
+__mars.standardPages('b', 'b-')      // the five standard pages for station b
+__mars.save()                         // keep it in this display's localStorage
+__mars.stations()  __mars.stats()     // running stations, live GPU objects
+```
 
 ## URL parameters
 
-`?station=edge-eu-2&hosts=48&speed=10&fps=30&dpr=1.5&finish=ivory&page=2&cycle=120&source=/telemetry.json`
+`?fps=30&dpr=1.5&finish=ivory&page=2&cycle=120` override the document's `device` block for this
+session. Use `fps=30` and `dpr=1` on weak machines or 4K panels.
 
-Use `fps=30` and `dpr=1` on weak machines or 4K panels. `stations=2` is a debug flag (see Architecture).
+The parameters from before the config document still work and describe one station:
+`?station=edge-eu-2&hosts=48&speed=10&source=/telemetry.json` (`source` is `sim` or a JSON URL).
 
 ## Connecting real data
 
-Set `?source=<url>` to poll a JSON endpoint once per second ([src/data/polling.js](src/data/polling.js)):
+Give a station `"source": { "kind": "poll", "url": "/telemetry.json", "hosts": 48 }` (or use the
+old `?source=<url>`) to poll a JSON endpoint once per second ([src/data/polling.js](src/data/polling.js)):
 
 ```json
 { "timestamp": 1730812345123, "latency": 12.4, "throughput": 318, "errorRate": 0.003,
@@ -117,21 +151,25 @@ If `backfill` returns history (for example from a Prometheus range query), the a
 ```
 src/station/    station = profile (thresholds, SLO, topology, endpoints, regions)
                 + source + telemetry store + almanac + signal analyser
+                manager.js: one running station per document entry, diffed by id
 src/data/       simulator + polling sources → telemetry store (tape rows, state, events)
 src/gl/         engine: one WebGL2 context renders every screen
 src/instruments each instrument = fragment shader + update() that returns uniforms
                 registry.js: every panel type; overlays/: labels printed on the glass
-src/config/     presets.js: the built-in pages (DEFAULT_PAGES)
+src/config/     the config document: schema (zod), migrations, load order, store;
+                presets.js: standardPages(station) and DEFAULT_PAGES
 src/ui/         PageView (lays a page's panels out on the 12 × 8 grid), Module, Screen
-src/config.js   device constants (tape geometry, history lengths) and URL parameters
+src/config.js   device constants (tape geometry, history lengths)
+src/runtime.js  boot(): load the document, start the stations, window.__mars
 src/App.jsx     the housing (header, keys, page switching)
 ```
 
 Nothing station-specific is a module global. `createStation(def)` builds one monitored
 system, and every instrument factory takes it: `createX(station, options = {})`, reading
-`station.store`, `station.signal`, `station.almanac` and `station.profile`. Several stations
-can run side by side; `?stations=2` starts a second, hidden sim station and logs both
-latency streams to the console once per second (a debug check).
+`station.store`, `station.signal`, `station.almanac` and `station.profile`. Instruments with
+registry scope `either` or `device` get the device instead, `{ stations }`, a live read-only list.
+The page 4 analyser (`station.signal`) exists only while a mounted panel that `needs: ['signal']`
+holds it. Each station keeps its almanac in IndexedDB under `station:<id>:<source kind>`.
 
 Instruments come in two kinds:
 

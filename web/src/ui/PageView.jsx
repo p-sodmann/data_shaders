@@ -18,11 +18,14 @@ export function firstNumbers(pages) {
   });
 }
 
-export function PageView({ page, stations, first = 1 }) {
+// stations: { id: station }. device: { stations } for panels bound to '*' and
+// cross-station instruments. named: put the station's name in each module header
+// (when the document has more than one station).
+export function PageView({ page, stations, device, named = false, first = 1 }) {
   return (
     <main className="deck">
       {page.panels.map((panel, i) => (
-        <Panel key={panel.id} panel={panel} station={stations[panel.station]} num={String(first + i).padStart(2, '0')} />
+        <Panel key={panel.id} panel={panel} stations={stations} device={device} named={named} num={String(first + i).padStart(2, '0')} />
       ))}
     </main>
   );
@@ -30,24 +33,32 @@ export function PageView({ page, stations, first = 1 }) {
 
 const place = ({ x, y, w, h }) => ({ '--gc': `${x + 1} / span ${w}`, '--gr': `${y + 1} / span ${h}`, '--h': h });
 
-function Panel({ panel, station, num }) {
+// What a panel's instrument is built on: one station, or the whole device.
+function targetOf(def, panel, stations, device) {
+  if (def.scope === 'device') return device;
+  if (panel.station === '*') return def.scope === 'either' ? device : null;
+  return stations[panel.station] ?? null;
+}
+
+function Panel({ panel, stations, device, named, num }) {
   const def = REGISTRY[panel.type];
   const style = place(panel);
   if (!def) {
     return <EmptyPanel num={num} name={panel.type} style={style} text="NO MODULE" warning={`panel "${panel.id}": unknown type "${panel.type}"`} />;
   }
-  if (def.scope === 'station' && !station) {
+  const station = targetOf(def, panel, stations, device);
+  if (!station) {
     return (
       <EmptyPanel
         num={num}
         name={safeName(def, panel.options) ?? panel.type}
         style={style}
         text="NO SIGNAL"
-        warning={`panel "${panel.id}": no station "${panel.station}"`}
+        warning={panel.station === '*' ? `panel "${panel.id}": "${panel.type}" needs one station, not '*'` : `panel "${panel.id}": no station "${panel.station}"`}
       />
     );
   }
-  return <LivePanel panel={panel} def={def} station={station} num={num} style={style} />;
+  return <LivePanel panel={panel} def={def} station={station} named={named} num={num} style={style} />;
 }
 
 function safeName(def, options) {
@@ -58,9 +69,15 @@ function safeName(def, options) {
   }
 }
 
-function LivePanel({ panel, def, station, num, style }) {
-  // Live captions and overlays follow the station's (throttled) snapshot.
-  const snap = useSyncExternalStore(station.store.subscribe, station.store.getSnapshot);
+const noStore = { subscribe: () => () => {}, getSnapshot: () => null };
+
+function LivePanel({ panel, def, station, named, num, style }) {
+  // Live captions and overlays follow the station's (throttled) snapshot. The
+  // device has no store of its own; its instruments draw from the stations.
+  const store = station.store ?? noStore;
+  const snap = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const holdsSignal = def.needs.includes('signal') && !!station.retainSignal;
+  useEffect(() => (holdsSignal ? station.retainSignal() : undefined), [holdsSignal, station]);
   const optionsKey = JSON.stringify(panel.options ?? {});
   const built = useMemo(() => {
     const options = resolveOptions(def, panel.options);
@@ -75,7 +92,8 @@ function LivePanel({ panel, def, station, num, style }) {
   if (built.error) {
     return <EmptyPanel num={num} name={panel.type} style={style} text="NO MODULE" warning={`panel "${panel.id}": ${built.error.message}`} />;
   }
-  const { options, name, inst } = built;
+  const { options, inst } = built;
+  const name = named && station.name ? `${built.name} · ${station.name}` : built.name;
   const Overlay = def.overlay;
   return (
     <Module num={num} name={name} meta={panelMeta(def, { station, snap, options })} className="panel" style={style}>

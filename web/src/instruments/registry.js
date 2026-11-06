@@ -27,9 +27,12 @@ import { HeatOverlay } from './overlays/heat.jsx';
 //   meta      header text on the right, or ({ station, snap, options }) => text;
 //             snap is the station's store snapshot, so live captions follow the data
 //   scope     'station' (built from one station) | 'device' (cross-station, step 10)
-//   create    (station, options) => instrument (see gl/engine.js for the interface)
+//             | 'either' (one station, or every station when the panel is bound to '*')
+//   create    (station, options) => instrument (see gl/engine.js for the interface);
+//             device and '*' panels get the device instead: { stations } (read-only, live)
 //   overlay   optional React component rendered inside the glass, gets { inst, station, snap, options }
-//   needs     station tables the instrument reads; step 07 uses it for discovered stations
+//   needs     station tables the instrument reads; step 07 uses it for discovered stations.
+//             'signal' (the page 4 analyser) is held only while such a panel is mounted
 //   minW/minH, defaultSize [w, h], aspect   grid cells, enforced by the editor (step 08)
 //   options   option schema { key: { type, default, label, values? } }, used by step 08
 
@@ -89,7 +92,13 @@ export const REGISTRY = Object.freeze({
     defaultSize: [2, 2],
     options: { signal: { type: 'enum', values: Object.keys(READOUTS), default: 'latency', label: 'Signal' } },
   }),
-  log: entry({ name: 'Event log', meta: 'Teletype', create: createLog, minW: 3, defaultSize: [6, 2] }),
+  log: entry({
+    name: 'Event log',
+    meta: ({ station }) => (station.stations ? 'Teletype · all stations' : 'Teletype'),
+    scope: 'either',
+    create: createLog,
+    minW: 3, defaultSize: [6, 2],
+  }),
 
   // page 2: orbit
   orbit: entry({ name: 'Orbit', meta: 'Service topology · live calls', create: createOrbit, minW: 4, minH: 3, defaultSize: [7, 6] }),
@@ -106,17 +115,18 @@ export const REGISTRY = Object.freeze({
   origins: entry({ name: 'Origins', meta: 'Client regions · RTT ms · err %', create: createOrigins, needs: ['regions'], minW: 4, defaultSize: [6, 2] }),
 
   // page 4: signal
-  spectrum: entry({ name: 'Spectrum', meta: 'P50 latency · 4 h reference · 10 min live', create: createSpectrum, minW: 4, defaultSize: [7, 3] }),
+  spectrum: entry({ name: 'Spectrum', meta: 'P50 latency · 4 h reference · 10 min live', create: createSpectrum, needs: ['signal'], minW: 4, defaultSize: [7, 3] }),
   waterfall: entry({
     name: 'Waterfall',
     meta: 'Spectrogram · 30 min window · 1 row per 30 s',
     create: createWaterfall,
     overlay: WaterfallOverlay,
+    needs: ['signal'],
     minW: 4, defaultSize: [7, 3],
   }),
-  xy: entry({ name: 'X‑Y scope', meta: 'Latency vs load · operating curve', create: createXYScope, minW: 3, minH: 3, defaultSize: [5, 6] }),
-  correlator: entry({ name: 'Correlator', meta: 'Signal pairs · 10 min vs 4 h', create: createCorrelator, minW: 4, defaultSize: [6, 2] }),
-  rhythms: entry({ name: 'Rhythms', meta: 'Scheduled behaviour · epoch folding', create: createRhythms, minW: 4, defaultSize: [6, 2] }),
+  xy: entry({ name: 'X‑Y scope', meta: 'Latency vs load · operating curve', create: createXYScope, needs: ['signal'], minW: 3, minH: 3, defaultSize: [5, 6] }),
+  correlator: entry({ name: 'Correlator', meta: 'Signal pairs · 10 min vs 4 h', create: createCorrelator, needs: ['signal'], minW: 4, defaultSize: [6, 2] }),
+  rhythms: entry({ name: 'Rhythms', meta: 'Scheduled behaviour · epoch folding', create: createRhythms, needs: ['signal'], minW: 4, defaultSize: [6, 2] }),
 
   // page 5: almanac
   dial: entry({

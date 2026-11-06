@@ -70,8 +70,10 @@ Check <http://localhost:9090/targets>: the target should be `UP`, and
   only copy ([ADR-0003](../docs/adr/0003-metric-contract.md)). After editing them, reload
   without a restart: `curl -X POST localhost:9090/-/reload`.
 - [config/](config/): mounted at `/config` in the `mars` container and served at
-  `localhost:8080/config/` without caching. Empty for now; the config document arrives in
-  step 06. `/config/` itself answers 404 (no listing).
+  `localhost:8080/config/` without caching. Put a config document there as `mars.json`
+  ([ADR-0005](../docs/adr/0005-config-document.md); example in
+  [web/public/examples/two-stations.json](../web/public/examples/two-stations.json)) and every
+  display without its own saved copy loads it. `/config/` itself answers 404 (no listing).
 
 ## Ports and exposure
 
