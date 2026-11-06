@@ -24,7 +24,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const FRAG = `
 uniform sampler2D uRows;
-uniform float uHead, uLast, uShift, uWarn, uCrit, uMax;
+uniform float uHead, uLast, uShift, uWarn, uCrit, uMax, uLimits;
 #define K ${ROWS}
 const float N = ${ROW_SECONDS}.;
 const float P = ${TAPE.P}, YH = ${TAPE.YH}, Y0 = ${TAPE.Y0}, XL = ${TAPE.XL}, XR = ${TAPE.XR}, HS = ${TAPE.HS};
@@ -112,9 +112,9 @@ void main(){
       col += PH_OK*.5*smoothstep(1.2*uDpr, .2*uDpr, dx)*step(below, len)*step(3.*uDpr, below);
     }
     float yw = base0+H(uWarn)*s0;
-    col += PH_WARN*.22*smoothstep(1.*uDpr, 0., abs(uv.y-yw)*uRes.y)*step(.5, fract(px.x/(9.*uDpr)));
+    col += uLimits*PH_WARN*.22*smoothstep(1.*uDpr, 0., abs(uv.y-yw)*uRes.y)*step(.5, fract(px.x/(9.*uDpr)));
     float yc = base0+H(uCrit)*s0;
-    col += PH_CRIT*.16*smoothstep(1.*uDpr, 0., abs(uv.y-yc)*uRes.y)*step(.75, fract(px.x/(9.*uDpr)));
+    col += uLimits*PH_CRIT*.16*smoothstep(1.*uDpr, 0., abs(uv.y-yc)*uRes.y)*step(.75, fract(px.x/(9.*uDpr)));
   }
 
   // write head
@@ -130,9 +130,11 @@ void main(){
 }
 `;
 
+// options.limits: draw the warn and crit lines (default on)
 export function createTape(station, options = {}) {
   const { store } = station;
   const { thresh } = station.profile;
+  const limits = options.limits === false ? 0 : 1;
   let tex = null;
   let seen = -1;
   const data = new Float32Array(ROW_SECONDS * ROWS * 2);
@@ -159,6 +161,7 @@ export function createTape(station, options = {}) {
         uWarn: thresh.warn,
         uCrit: thresh.crit,
         uMax: thresh.max,
+        uLimits: limits,
       };
     },
     dispose() {

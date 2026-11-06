@@ -166,6 +166,7 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
   const screens = new Set();
   const api = { gl, dataTexture };
   let dpr = 1;
+  let held = false;
 
   function alloc(s, w, h) {
     if (s.t) Object.values(s.t).forEach(freeTarget);
@@ -181,6 +182,13 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
     const y = Math.round((r.top - cr.top) * dpr);
     const w = Math.round(r.width * dpr);
     const h = Math.round(r.height * dpr);
+    // Held (a module is being dragged or resized): the instrument isn't asked
+    // for a new frame, and its last picture is composited, stretched if need
+    // be, wherever the glass is now.
+    if (held && s.last) {
+      composite(s, f, x, y, w, h, s.last, s.t.b1);
+      return;
+    }
     if (!s.t || s.t.scene.w !== w || s.t.scene.h !== h) alloc(s, w, h);
     const { crt, t } = s;
     const common = { uRes: [w, h], uTime: f.time, uDpr: dpr };
@@ -206,14 +214,22 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
     pass(t.b1, post.down, { ...common, uSrc: cur.tex, uTexel: [1 / w, 1 / h] });
     pass(t.b2, post.blur, { ...common, uSrc: t.b1.tex, uDir: [1.5 / t.b1.w, 0] });
     pass(t.b1, post.blur, { ...common, uSrc: t.b2.tex, uDir: [0, 1.5 / t.b1.h] });
+    s.last = cur;
+    composite(s, f, x, y, w, h, cur, t.b1);
+  }
 
+  function composite(s, f, x, y, w, h, img, bloom) {
+    const { crt } = s;
+    gl.bindVertexArray(vao);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(x, canvas.height - y - h, w, h);
     use(post.comp, {
-      ...common,
+      uRes: [w, h],
+      uTime: f.time,
+      uDpr: dpr,
       uAge: (f.now - s.born) / 1000 - s.delay,
-      uImg: cur.tex,
-      uBloom: t.b1.tex,
+      uImg: img.tex,
+      uBloom: bloom.tex,
       uCurve: crt.curve,
       uScan: crt.scan,
       uBloomAmt: crt.bloom,
@@ -286,6 +302,11 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
         if (s.prog) gl.deleteProgram(s.prog.p);
         inst.dispose?.(gl, s.state);
       };
+    },
+    // While held, screens keep their last frame (the service panel holds the
+    // engine during a drag, so moving a module costs no instrument updates).
+    hold(on) {
+      held = !!on;
     },
     // debug counter: a page switch that leaks shows up as growing numbers here
     stats: () => ({ screens: screens.size, ...live }),

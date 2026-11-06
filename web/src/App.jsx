@@ -1,22 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createEngine } from './gl/engine.js';
 import { HOUSING } from './instruments/registry.js';
 import { worstStation } from './station/manager.js';
-import { EngineContext, Module, Screen } from './ui/device.jsx';
+import { EngineContext, Key, Module, Screen } from './ui/device.jsx';
 import { PageView, firstNumbers } from './ui/PageView.jsx';
+import { Field } from './ui/service/controls.jsx';
+import { addPage, deletePage, movePage, renamePage, MAX_PAGES } from './config/edit.js';
+
+// The service panel (and react-grid-layout with it) loads when the housing is
+// first opened; a display on a wall never needs it.
+const Workbench = lazy(() => import('./ui/service/Workbench.jsx').then((m) => ({ default: m.Workbench })));
 
 const SPEEDS = [1, 10, 60];
 const DEFAULT_CYCLE = 90;
-
-function Key({ k, children, onClick, accent, active }) {
-  const cls = ['key', accent && 'accent', active !== undefined && 'latch', active && 'on'].filter(Boolean).join(' ');
-  return (
-    <button className={cls} onClick={onClick} tabIndex={-1}>
-      <kbd>{k}</kbd>
-      <span>{children}</span>
-    </button>
-  );
-}
+const UNLOCK_HOLD_MS = 2000;
+const CONFIRM_MS = 3000;
 
 const toggleFullscreen = () => {
   if (document.fullscreenElement) document.exitFullscreen?.();
@@ -49,6 +47,7 @@ function stationsOnPage(page, byId, list) {
 
 export default function App({ docStore, manager, device }) {
   const doc = useSyncExternalStore(docStore.subscribe, docStore.getDoc);
+  const meta = useSyncExternalStore(docStore.subscribe, docStore.getMeta);
   const { list, byId } = useSyncExternalStore(manager.subscribe, manager.getSnapshot);
   const pages = doc.pages;
   const first = useMemo(() => firstNumbers(pages), [pages]);
@@ -73,6 +72,20 @@ export default function App({ docStore, manager, device }) {
   // which of the current page's stations T injects into (Shift+T cycles)
   const [target, setTarget] = useState(0);
 
+  // The service panel (step 08). A locked device (doc.device.locked) only
+  // opens after a 2 s press on the SERVICE key, or with ?unlock=1; the
+  // long-press unlock lasts until the housing is closed again.
+  const [editing, setEditing] = useState(false);
+  const [unlocked, setUnlocked] = useState(() => new URLSearchParams(location.search).get('unlock') === '1');
+  const urlUnlock = useRef(unlocked).current;
+  const [holding, setHolding] = useState(false);
+  const holdTimer = useRef(null);
+  const [notice, setNotice] = useState(null);
+  const [renaming, setRenaming] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [stdOpen, setStdOpen] = useState(false);
+  const locked = doc.device.locked && !unlocked;
+
   // a document edit may remove pages under us
   const pageNo = Math.min(Math.max(1, page), pages.length);
   const current = pages[pageNo - 1];
@@ -87,15 +100,25 @@ export default function App({ docStore, manager, device }) {
 
   // Key handlers are bound once; they read the latest values from here.
   const live = useRef(null);
-  live.current = { pages, testable, testStation, list };
+  live.current = { pages, testable, testStation, list, editing, locked };
 
   useEffect(() => localStorage.setItem('mars.page', pageNo), [pageNo]);
   useEffect(() => setTarget(0), [current.id]);
+  // pages don't turn while the housing is open
   useEffect(() => {
-    if (!cycle) return undefined;
+    if (!cycle || editing) return undefined;
     const id = setInterval(() => setPage((p) => (p % live.current.pages.length) + 1), cycle * 1000);
     return () => clearInterval(id);
-  }, [cycle]);
+  }, [cycle, editing]);
+  useEffect(() => {
+    if (!confirmDelete) return undefined;
+    const id = setTimeout(() => setConfirmDelete(false), CONFIRM_MS);
+    return () => clearTimeout(id);
+  }, [confirmDelete]);
+  useEffect(() => {
+    setRenaming(false);
+    setConfirmDelete(false);
+  }, [pageNo, editing]);
 
   useEffect(() => {
     let e = null;
@@ -144,14 +167,102 @@ export default function App({ docStore, manager, device }) {
         setPage((p) => ((Math.min(p, n) + n - 2) % n) + 1);
       },
       auto: () => setCycle((c) => (c ? 0 : device.cycle || DEFAULT_CYCLE)),
+      service() {
+        const { editing: open, locked: shut } = live.current;
+        if (open) actions.close();
+        else if (!shut) setEditing(true);
+      },
+      close() {
+        setEditing(false);
+        setStdOpen(false);
+        setNotice(null);
+        if (!urlUnlock) setUnlocked(false);
+      },
     }),
     [],
   );
 
+  // A document edit from the service panel. The store refuses an invalid
+  // document by throwing; the first line of its reason goes on the panel.
+  const edit = useCallback(
+    (fn) => {
+      try {
+        docStore.setDoc(fn);
+        setNotice(null);
+        return true;
+      } catch (e) {
+        setNotice(String(e.message).split('\n')[0]);
+        return false;
+      }
+    },
+    [docStore],
+  );
+
+  // SERVICE key: a click toggles the housing; on a locked device only a 2 s
+  // press opens it.
+  const servicePress = () => {
+    if (!locked || editing) return;
+    setHolding(true);
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = 'opened';
+      setHolding(false);
+      setUnlocked(true);
+      setEditing(true);
+    }, UNLOCK_HOLD_MS);
+  };
+  // the click that ends a successful long press must not close it again
+  const serviceClick = () => {
+    if (holdTimer.current === 'opened') holdTimer.current = null;
+    else if (!locked) actions.service();
+  };
+  const serviceRelease = () => {
+    if (holdTimer.current !== 'opened') clearTimeout(holdTimer.current);
+    setHolding(false);
+  };
+  useEffect(() => () => clearTimeout(holdTimer.current), []);
+
+  const pageOps = {
+    add() {
+      if (edit((d) => addPage(d))) setPage(pages.length + 1);
+    },
+    move(dir) {
+      let index = pageNo - 1;
+      const moved = edit((d) => {
+        const r = movePage(d, pageNo - 1, dir);
+        index = r.index;
+        return r.doc;
+      });
+      if (moved) setPage(index + 1);
+    },
+    rename(name) {
+      edit((d) => renamePage(d, pageNo - 1, name));
+      setRenaming(false);
+    },
+    remove() {
+      if (!confirmDelete) return setConfirmDelete(true);
+      setConfirmDelete(false);
+      if (edit((d) => deletePage(d, pageNo - 1))) setPage(Math.max(1, pageNo - 1));
+    },
+  };
+
   useEffect(() => {
     const onKey = (e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target instanceof HTMLInputElement) return;
       const key = e.key.toLowerCase();
+      const { editing: open } = live.current;
+      if (open && (e.metaKey || e.ctrlKey) && (key === 'z' || key === 'y')) {
+        e.preventDefault();
+        if (key === 'y' || e.shiftKey) docStore.redo();
+        else docStore.undo();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (key === 'e' || (key === 'escape' && open)) {
+        e.preventDefault();
+        if (key === 'escape') actions.close();
+        else actions.service();
+        return;
+      }
       const fn =
         key === 't' && e.shiftKey
           ? actions.target
@@ -184,7 +295,7 @@ export default function App({ docStore, manager, device }) {
       window.removeEventListener('pointermove', wake);
       clearTimeout(idle);
     };
-  }, [actions]);
+  }, [actions, docStore]);
 
   const nodes = list.reduce((n, s) => n + s.store.hostCount, 0);
 
@@ -226,23 +337,80 @@ export default function App({ docStore, manager, device }) {
             </div>
           </header>
 
-          <PageView key={current.id} page={current} stations={byId} device={manager.device} named={named} first={first[pageNo - 1]} />
+          {editing ? (
+            <Suspense fallback={<main className="deck" />}>
+              <Workbench
+                key={current.id}
+                doc={doc}
+                meta={meta}
+                pageIndex={pageNo - 1}
+                stations={byId}
+                device={manager.device}
+                named={named}
+                first={first[pageNo - 1]}
+                edit={edit}
+                notice={notice}
+                onNotice={setNotice}
+                store={docStore}
+                stdOpen={stdOpen}
+                onStdClose={() => setStdOpen(false)}
+                onPage={setPage}
+              />
+            </Suspense>
+          ) : (
+            <PageView key={current.id} page={current} stations={byId} device={manager.device} named={named} first={first[pageNo - 1]} />
+          )}
 
           <footer className="ft">
             <div className="keys">
-              {pages.map((p, i) => (
-                <Key key={p.id} k={i + 1} onClick={() => actions.page(i + 1)} active={pageNo === i + 1}>
-                  {p.name}
-                </Key>
-              ))}
-              <Key k="A" onClick={actions.auto} active={!!cycle}>Auto</Key>
+              {pages.map((p, i) =>
+                editing && renaming && pageNo === i + 1 ? (
+                  <span key={p.id} className="key latch on renaming">
+                    <kbd>{i + 1}</kbd>
+                    <Field value={p.name} maxLength={16} autoFocus onCommit={pageOps.rename} onCancel={() => setRenaming(false)} />
+                  </span>
+                ) : (
+                  <Key key={p.id} k={i + 1} onClick={() => actions.page(i + 1)} active={pageNo === i + 1}>
+                    {p.name}
+                  </Key>
+                ),
+              )}
+              {editing ? (
+                <>
+                  <span className="keysep" />
+                  <Key k="+" onClick={pageOps.add} disabled={pages.length >= MAX_PAGES} className="page-add">New page</Key>
+                  <Key k="◀" onClick={() => pageOps.move(-1)} disabled={pageNo === 1} className="page-left" />
+                  <Key k="▶" onClick={() => pageOps.move(1)} disabled={pageNo === pages.length} className="page-right" />
+                  <Key k="✎" onClick={() => setRenaming(true)} className="page-rename">Rename</Key>
+                  <Key k="✕" onClick={pageOps.remove} disabled={pages.length <= 1} className="page-delete">
+                    {confirmDelete ? 'Press again' : 'Delete'}
+                  </Key>
+                  <Key k="▦" onClick={() => setStdOpen((o) => !o)} active={stdOpen} className="page-std">Std pages</Key>
+                </>
+              ) : (
+                <>
+                  <Key k="A" onClick={actions.auto} active={!!cycle}>Auto</Key>
+                  <span className="keysep" />
+                  <Key k="F" onClick={actions.fullscreen}>Fullscreen</Key>
+                  <Key k="T" onClick={actions.test} accent>
+                    {onPage.length > 1 && testStation ? `Test · ${testStation.name}` : 'Test alarm'}
+                  </Key>
+                  <Key k="S" onClick={actions.speed}>{sim ? `Time ×${simSnap?.speed ?? 1}` : 'Time ×1 live'}</Key>
+                  <Key k="B" onClick={actions.finish}>Finish</Key>
+                </>
+              )}
               <span className="keysep" />
-              <Key k="F" onClick={actions.fullscreen}>Fullscreen</Key>
-              <Key k="T" onClick={actions.test} accent>
-                {onPage.length > 1 && testStation ? `Test · ${testStation.name}` : 'Test alarm'}
+              <Key
+                k="E"
+                className={`service-key${holding ? ' holding' : ''}`}
+                active={editing}
+                onClick={serviceClick}
+                onPointerDown={servicePress}
+                onPointerUp={serviceRelease}
+                onPointerLeave={serviceRelease}
+              >
+                {locked ? 'Service · hold' : 'Service'}
               </Key>
-              <Key k="S" onClick={actions.speed}>{sim ? `Time ×${simSnap?.speed ?? 1}` : 'Time ×1 live'}</Key>
-              <Key k="B" onClick={actions.finish}>Finish</Key>
             </div>
             <div className="grille" />
             <div className="serial">

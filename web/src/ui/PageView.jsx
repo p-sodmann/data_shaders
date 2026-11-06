@@ -26,11 +26,21 @@ export function PageView({ page, stations, device, named = false, first = 1 }) {
   return (
     <main className="deck">
       {page.panels.map((panel, i) => (
-        <Panel key={panel.id} panel={panel} stations={stations} device={device} named={named} num={String(first + i).padStart(2, '0')} />
+        <Panel
+          key={panel.id}
+          panel={panel}
+          stations={stations}
+          device={device}
+          named={named}
+          num={moduleNumber(first, i)}
+          style={place(panel)}
+        />
       ))}
     </main>
   );
 }
+
+export const moduleNumber = (first, i) => String(first + i).padStart(2, '0');
 
 const place = ({ x, y, w, h }) => ({ '--gc': `${x + 1} / span ${w}`, '--gr': `${y + 1} / span ${h}`, '--h': h });
 
@@ -41,9 +51,11 @@ function targetOf(def, panel, stations, device) {
   return stations[panel.station] ?? null;
 }
 
-function Panel({ panel, stations, device, named, num }) {
+// One module: the panel's instrument on its station, or an empty bay. The
+// service panel's editable deck mounts the same component (step 08); `style`
+// is the grid placement here and empty there.
+export function Panel({ panel, stations, device, named, num, style }) {
   const def = REGISTRY[panel.type];
-  const style = place(panel);
   if (!def) {
     return <EmptyPanel num={num} name={panel.type} style={style} text="NO MODULE" warning={`panel "${panel.id}": unknown type "${panel.type}"`} />;
   }

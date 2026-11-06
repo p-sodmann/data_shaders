@@ -3,6 +3,21 @@
 Add questions as you find them, under a heading for their area. Resolve them by moving them
 to **Resolved** with the answer, the date and the step or ADR that settled them.
 
+## Service panel
+
+- **Standard pages and the 9-page cap (step 08).** "Add standard pages for station…" adds five
+  pages, so the built-in document (5 pages) has to lose two before it can take a second
+  station's set, and the panel refuses with `no room for 5 more pages`. Options: allow it to add
+  as many as fit, let it replace the current pages, or raise the cap (keys `1`–`9` would need
+  another way to reach pages 10+).
+- **A saved `?config=` document still loses to the URL (step 08).** After *Save as local*,
+  reloading with the same `?config=` loads the URL's document again (ADR-0005 load order), so a
+  kiosk link keeps showing the unedited cartridge. Should a saved copy of a URL document win
+  over that URL (for example, keyed by the URL), or is "open it without `?config=`" right?
+- **Undo history is in memory only (step 08).** It's lost on reload and covers every document
+  change, console edits included. Is that enough, or should the last N snapshots go to
+  sessionStorage?
+
 ## UI
 
 - **Bank divider rule (step 05):** the old layout drew an engraved rule between the deck and the

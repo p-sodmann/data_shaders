@@ -5,7 +5,7 @@ import { rowGeom, tapeHeight, TAPE } from '../tape.js';
 
 // Labels printed on the tape glass. They share the shader's geometry, and
 // slide with the tape when a row is archived.
-export function TapeOverlay({ station, snap }) {
+export function TapeOverlay({ station, snap, options }) {
   const { rowStart } = snap;
   const { thresh } = station.profile;
   if (rowStart == null) return null;
@@ -36,12 +36,16 @@ export function TapeOverlay({ station, snap }) {
     <>
       {rows}
       {axis}
-      <span className="ov thr warn" style={{ bottom: `${wy}%`, right: `${(1 - TAPE.XR) * 100}%` }}>
-        WARN {thresh.warn}
-      </span>
-      <span className="ov thr crit" style={{ bottom: `${cy}%`, right: `${(1 - TAPE.XR) * 100}%` }}>
-        CRIT {thresh.crit}
-      </span>
+      {options?.limits !== false && (
+        <>
+          <span className="ov thr warn" style={{ bottom: `${wy}%`, right: `${(1 - TAPE.XR) * 100}%` }}>
+            WARN {thresh.warn}
+          </span>
+          <span className="ov thr crit" style={{ bottom: `${cy}%`, right: `${(1 - TAPE.XR) * 100}%` }}>
+            CRIT {thresh.crit}
+          </span>
+        </>
+      )}
       <span className="ov corner">P50 MS · −4 H ↑ · NOW ↓</span>
     </>
   );

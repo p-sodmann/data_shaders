@@ -81,8 +81,36 @@ Colour is a signal, never decoration: mint is nominal, amber is warn, orange is 
 
 ## Keys
 
-`1`–`9` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station (live stations always run at ×1) · `B` graphite or ivory finish.
+`1`–`9` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station (live stations always run at ×1) · `B` graphite or ivory finish · `E` opens the service panel (see below).
 The pointer hides after 2.5 s.
+
+## The service panel (editing pages)
+
+Press `E` or the `SERVICE` key to open the housing. The deck shows its 12 × 8 grid, and every
+module sits on a mounting plate:
+
+- **Move** a module by its label strip, **resize** it by the notch at the bottom-right. The grid
+  has no compaction: a module only lands where it fits, never on another one or off the deck.
+- **Module bay** (right): every instrument as a faceplate. Click one to put it in the first free
+  spot that fits its default size (or down to its minimum), or drag it onto the deck. `NO ROOM`
+  marks those that don't fit; `PAGE FULL` says nothing does.
+- **Settings plate**: click a module. Pick its station (each with a live lamp; the event log
+  also has *All stations*), set its options, or **Remove**, **Duplicate** (first free spot) and
+  **Swap** (pick the new instrument in the bay; it keeps the place and drops the old options).
+  `Delete` removes the selected module.
+- **Pages** (key row): `+` new page `PAGE N`, `◀ ▶` move the current page, `✎` rename it,
+  `✕` delete it (press twice), `▦` add the five standard pages for a station.
+- `Ctrl/Cmd+Z` undo, `Shift+Ctrl/Cmd+Z` (or `Ctrl+Y`) redo, 50 steps; also the *Undo* and *Redo*
+  keys. `Esc` or `E` closes the housing.
+
+Every change is saved to this display's `localStorage` after half a second, except for a
+document from the URL (`?config=` or legacy parameters): the panel says *URL cartridge · not
+saved* until you press **Save as local**. A reload with the same `?config=` still loads the
+URL's document; open the display without it to get the saved copy.
+
+**Lock** sets `device.locked` in the document. A locked display ignores `E` and clicks on
+`SERVICE`; hold `SERVICE` for 2 s (or open the page with `?unlock=1`) to get in. The long-press
+unlock lasts until the housing is closed again.
 
 ## The config document
 
@@ -102,7 +130,8 @@ Several stations run side by side. With more than one, module headers carry the 
 the alarm lamp and the System tube show the worst station, and an event log bound to
 `"station": "*"` merges every station's events.
 
-For now there is no editor (that's step 08). In the devtools console:
+Pages can be edited on the device itself (the service panel, above). Stations are still added
+in the devtools console (a stations plate is step 09):
 
 ```js
 __mars.getDoc()                       // the current document (frozen)
@@ -116,7 +145,7 @@ __mars.stations()  __mars.stats()     // running stations, live GPU objects
 ## URL parameters
 
 `?fps=30&dpr=1.5&finish=ivory&page=2&cycle=120` override the document's `device` block for this
-session. Use `fps=30` and `dpr=1` on weak machines or 4K panels.
+session. `?unlock=1` lets `E` open a locked device for this session. Use `fps=30` and `dpr=1` on weak machines or 4K panels.
 
 The parameters from before the config document still work and describe one station:
 `?station=edge-eu-2&hosts=48&speed=10&source=/telemetry.json` (`source` is `sim` or a JSON URL).
@@ -221,7 +250,10 @@ src/instruments each instrument = fragment shader + update() that returns unifor
                 registry.js: every panel type; overlays/: labels printed on the glass
 src/config/     the config document: schema (zod), migrations, load order, store;
                 presets.js: standardPages(station) and DEFAULT_PAGES
-src/ui/         PageView (lays a page's panels out on the 12 × 8 grid), Module, Screen
+src/ui/         PageView (lays a page's panels out on the 12 × 8 grid), Module, Screen, Key
+src/ui/service/ the service panel: EditableDeck (react-grid-layout), ModuleBay,
+                SettingsPlate, Workbench; loaded on first use. Edits are pure functions
+                in src/config/edit.js; the doc store keeps the undo stack
 src/config.js   device constants (tape geometry, history lengths)
 src/runtime.js  boot(): load the document, start the stations, window.__mars
 src/App.jsx     the housing (header, keys, page switching)
@@ -247,7 +279,7 @@ cascade when a page is switched in.
 Pages are data. A page is `{ id, name, panels: [{ id, type, station, x, y, w, h, options }] }`,
 placed on a grid of 12 columns × 8 rows that fills the deck. `PageView` builds each panel's
 instrument when the page mounts and drops it when the page goes away. The engine frees the
-screen's GPU objects then, and `window.__MARS__.stats()` shows the live counts (screens,
+screen's GPU objects then, and `window.__mars.stats()` shows the live counts (screens,
 textures, framebuffers, programs, buffers). A panel whose type isn't in the registry shows
 `NO MODULE`. A panel whose station doesn't exist shows `NO SIGNAL`. Module numbers run on in
 panel order across all pages.
@@ -281,12 +313,15 @@ Then register it in [src/instruments/registry.js](src/instruments/registry.js):
 ```js
 mine: entry({
   name: 'My instrument',        // module header; may be (options) => text
+  reads: 'Saturation as a bar', // one line on the module bay's faceplate
   meta: 'Saturation · live',     // right-hand caption; may be ({ station, snap, options }) => text
   create: createMyInstrument,    // (station, options) => instrument
   overlay: null,                 // optional React component inside the glass: { inst, station, snap, options }
   needs: [],                     // station tables it reads: 'endpoints', 'stages', 'regions', 'almanac'
   minW: 3, minH: 2, defaultSize: [4, 3],
-  options: {},                   // { key: { type, default, label } }, defaults are filled in before create()
+  options: {},                   // { key: { type, default, label } }, defaults are filled in before create();
+                                 // types 'enum' (values), 'number' (min, max, step), 'boolean', 'string'
+                                 // are rendered on the settings plate
 }),
 ```
 

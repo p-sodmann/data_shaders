@@ -1,7 +1,8 @@
 // Headless smoke test: build, serve the build with `vite preview`, open every page in Chromium
 // and fail on console errors, page errors or missing module headers: the built-in default
 // document, the two-station example (?config=) and an old kiosk URL (legacy parameters, v0
-// migration). Then switch pages 50 times and fail if the engine's GPU object count grew. Screenshots go to snapshots/ so a person can
+// migration). Then switch pages 50 times and fail if the engine's GPU object count grew, and run
+// a scripted service-panel session (step 08). Screenshots go to snapshots/ so a person can
 // compare them; nothing here diffs pixels.
 //
 //   npm run smoke            (SMOKE_SKIP_BUILD=1 reuses an existing dist/)
@@ -175,6 +176,82 @@ async function checkSwitching(browser) {
   return { errors, before, after, peak };
 }
 
+// The service panel (step 08), driven like a person would: open the housing on the two-station
+// example, add a page, take a radar from the module bay, carry it three columns right by its
+// label, rebind it to the second station, save the URL cartridge as local, close the housing and
+// reload without ?config=. The layout must come back from localStorage. Then lock the device and
+// check that E no longer opens it.
+async function checkServicePanel(browser) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(`console.error: ${m.text()}`));
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  const doc = () => page.evaluate(() => window.__mars.getDoc());
+  const editing = async () => (await page.$('.service')) !== null;
+  const expect = (ok, what) => ok || errors.push(what);
+
+  await page.goto(`${BASE}${TWO}&page=1`, { waitUntil: 'load' });
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('e');
+  await page.waitForSelector('.service', { timeout: 5000 });
+  expect(/not saved/i.test(await page.textContent('.cartridge')), 'URL cartridge not shown as "not saved"');
+  await page.screenshot({ path: join(SNAPSHOTS, 'service-edit.png') });
+
+  await page.click('.page-add');
+  await page.click('.faceplate[data-type="radar"]');
+  await page.waitForTimeout(800);
+  let added = (await doc()).pages.at(-1);
+  expect(added.name === 'PAGE 5', `new page is "${added.name}"`);
+  const radar = added.panels.find((p) => p.type === 'radar');
+  expect(radar && radar.x === 0 && radar.y === 0 && radar.station === 'main', `radar placed as ${JSON.stringify(radar)}`);
+
+  // carry it by its label strip
+  const head = await page.$('.slot[data-panel="radar"] .mod-head');
+  const grid = await (await page.$('.service-grid')).boundingBox();
+  const hb = await head.boundingBox();
+  const col = grid.width / 12;
+  await page.mouse.move(hb.x + 40, hb.y + hb.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(hb.x + 40 + (3 * col * i) / 10, hb.y + hb.height / 2);
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const moved = (await doc()).pages.at(-1).panels.find((p) => p.id === 'radar');
+  expect(moved.x === 3 && moved.y === 0, `radar after the drag at ${moved.x},${moved.y}, expected 3,0`);
+
+  await page.click('.slot[data-panel="radar"] .mod-head');
+  await page.click('.station-pick[data-station="search"]');
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: join(SNAPSHOTS, 'service-settings.png') });
+  await page.click('.save-local');
+  await page.waitForTimeout(200);
+  expect(/saved on this display/i.test(await page.textContent('.cartridge')), 'cartridge not shown as saved after Save as local');
+  await page.keyboard.press('Escape');
+  expect(!(await editing()), 'Esc did not close the housing');
+
+  await page.goto(`${BASE}?page=5`, { waitUntil: 'load' });
+  await page.waitForTimeout(2000);
+  const back = (await doc()).pages.at(-1);
+  const r = back.panels.find((p) => p.id === 'radar');
+  expect(back.name === 'PAGE 5' && r && r.x === 3 && r.y === 0 && r.station === 'search', `after reload: ${JSON.stringify(back)}`);
+  const origin = await page.evaluate(() => window.__mars.origin);
+  expect(origin === 'local', `after reload the document came from "${origin}"`);
+  const names = await text(page, '.mod-head .name');
+  expect(names.includes('Proximity · SEARCH-01'), `module headers after reload: ${names.join(' | ')}`);
+
+  // lock it: E is ignored from then on
+  await page.keyboard.press('e');
+  await page.waitForSelector('.service', { timeout: 5000 });
+  await page.click('.service .key:has-text("Lock")');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('e');
+  await page.waitForTimeout(300);
+  expect(!(await editing()), 'E opened a locked device');
+
+  await context.close();
+  return errors;
+}
+
 async function main() {
   build();
   mkdirSync(SNAPSHOTS, { recursive: true });
@@ -216,6 +293,15 @@ async function main() {
       for (const e of sw.errors) console.log(`    ${e}`);
     } else {
       console.log(`✓ ${SWITCHES} page switches  GPU objects unchanged (${fmt(sw.after)}; peak textures ${sw.peak})`);
+    }
+    checks++;
+    const service = await checkServicePanel(browser);
+    if (service.length) {
+      failed++;
+      console.log('✗ service panel');
+      for (const e of service) console.log(`    ${e}`);
+    } else {
+      console.log('✓ service panel  page added, radar placed, moved, rebound, saved, reloaded; locked E ignored  → snapshots/service-*.png');
     }
   } finally {
     await browser.close();
