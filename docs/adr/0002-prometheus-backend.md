@@ -1,6 +1,7 @@
 # ADR-0002: Prometheus is the data backend
 
-Status: accepted · 2026-11-05
+Status: accepted · 2026-11-05 · amended by [ADR-0010](0010-push-gateway.md) (clients push to
+a gateway that Prometheus scrapes, instead of Prometheus scraping each client)
 
 ## Context
 

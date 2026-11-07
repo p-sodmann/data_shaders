@@ -5,10 +5,10 @@ screen. This folder holds the plan for turning the simulator prototype into a sy
 monitors real servers:
 
 ```
-FastAPI app + mars-probe  ──►  Prometheus (recording rules)  ──►  MARS web app
-  (Python, probe/)               (deploy/)                          (web/)
-Linux host + mars-agent   ──►
-  (agent/)
+FastAPI app + mars-probe ──push──►  mars-gateway  ──►  Prometheus           ──►  MARS web app
+  (Python, probe/)          key       (gateway/)        (recording rules,          (web/)
+Linux host + mars-agent  ──push──►                       deploy/)
+  (agent/)                  key
 ```
 
 - [steps/](steps/): the implementation packages, one file per agent session, run in order.
@@ -27,6 +27,7 @@ Linux host + mars-agent   ──►
 ├── web/                 MARS display (Vite + React + WebGL2), moved from the repo root in step 00
 ├── probe/               mars-probe Python package (FastAPI/ASGI instrumentation)
 ├── agent/               mars-agent: a Linux host as a node of a station (step 13)
+├── gateway/             mars-gateway: push keys, pushes → Prometheus (step 14)
 ├── examples/demo/       demo FastAPI service + load generator
 ├── deploy/              docker compose, Prometheus config, Caddy
 └── docs/                this folder
@@ -50,6 +51,7 @@ Linux host + mars-agent   ──►
 | 11 | [Regions and GeoIP](steps/11-regions-geoip.md) | probe, web | 07 |
 | 12 | [Release hardening and docs](steps/12-release.md) | all | all |
 | 13 | [Linux host agent and fleet example](steps/13-host-agent.md) | agent, probe, web | 12 |
+| 14 | [Push with keys](steps/14-push-gateway.md) | gateway, agent, probe, web, deploy | 13 |
 
 Steps 01–03 (Python and deploy) and 04–06 (web) are independent, so the two tracks can run
 in parallel. Step 07 is where they join.

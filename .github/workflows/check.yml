@@ -37,6 +37,18 @@ jobs:
             sleep 2
           done
           echo "$out"; exit 1
+      - name: a key made at /api/keys takes a push, and the node shows up
+        run: |
+          token=$(curl -sf -X POST localhost:8080/api/keys -H 'Content-Type: application/json' \
+            -d '{"name": "ci", "station": "ci"}' | python3 -c 'import json, sys; print(json.load(sys.stdin)["token"])')
+          for i in $(seq 15); do
+            printf 'mars_info{version="ci"} 1\n' | curl -sf -X POST --data-binary @- \
+              -H "Authorization: Bearer $token" localhost:8080/push/ci-1
+            out=$(curl -s localhost:8080/prom/api/v1/query --data-urlencode 'query=mars:node_up{station="ci"}')
+            echo "$out" | grep -q '"instance":"ci-1"' && echo "$out" && exit 0
+            sleep 1
+          done
+          echo "$out"; exit 1
       - if: failure()
         run: docker compose -f deploy/compose.yaml --profile demo logs --tail 50
       - run: docker compose -f deploy/compose.yaml --profile demo down -v

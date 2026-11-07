@@ -10,10 +10,11 @@ Two compose files ([ADR-0004](../docs/adr/0004-docker-compose.md)):
 | Service | What | Port |
 |---|---|---|
 | `mars` | the display ([web/Dockerfile](../web/Dockerfile)); Caddy serves it, proxies `/prom/*` to Prometheus and serves `/config/` | `8080` |
+| `mars-gateway` | [mars-gateway](../gateway/README.md): checks push keys, serves every client's latest push to Prometheus ([ADR-0010](../docs/adr/0010-push-gateway.md)); reached through `mars` at `/push` and `/api/keys` | `127.0.0.1:9111` (demo file), none (prod) |
 | `prometheus` | `prom/prometheus:v3.16.0`, 1 s scrape and rules, exemplars, 35 d retention | `127.0.0.1:9090` (demo file), none (prod) |
-| `demo-api`, `demo-search` | the [demo service](../examples/demo/README.md) as two stations (profile `demo`) | – |
+| `demo-api`, `demo-search` | the [demo service](../examples/demo/README.md) as two stations, pushing with demo keys (profile `demo`) | – |
 | `loadgen` | traffic for both, with a 10-minute "day" (profile `demo`) | – |
-| `demo-host` | [mars-agent](../agent/README.md) as station `fleet`, reporting the Docker/Podman VM (profile `demo`) | – |
+| `demo-host` | [mars-agent](../agent/README.md) as station `fleet`, reporting the Docker/Podman VM, pushing (profile `demo`) | – |
 
 Commands below run from the repo root. Podman works too, see [Troubleshooting](#troubleshooting).
 
@@ -59,30 +60,39 @@ docker compose -f deploy/compose.prod.yaml up -d
 `mars` is pinned to `ghcr.io/p-sodmann/mars-web:<version>` (amd64 and arm64). Without
 `pull`, or before that version is published (then `pull` reports 403 or "not found"), `up`
 builds the same image from this checkout.
+Clients **push** to MARS with a key ([ADR-0010](../docs/adr/0010-push-gateway.md)): nothing
+on the MARS machine needs to know their addresses, and they need no open port.
+
+To add a server:
+
+1. Make a key on the display: press `E`, then **Keys**, name it, pick or type its station
+   (`shop`), **Make key**, and copy the key (it is shown once).
+2. Instrument the app with [mars-probe](../probe/README.md) (`instrument(app, station="shop")`)
+   and start it with `MARS_PUSH_URL=http://<mars>:8080` and `MARS_PUSH_KEY=<key>`. It pushes
+   once a second and shows up on the keys plate under its host name.
+3. Press **Stations** on the service panel: `shop` is listed under *Available on Prometheus*,
+   and **Add** puts it on the device (with its standard pages if you like). See
+   [web/README.md](../web/README.md#stations-and-cartridges).
+
+The keys live in the `gateway-data` volume (their SHA-256 only). Keys can also come from the
+environment, `MARS_PUSH_KEYS='shop:<key> web:<key>'`; those can't be revoked from the display.
+
 Your files live in [site/](site/), which the prod file mounts:
 
 | Path | Mounted at | |
 |---|---|---|
-| `site/targets/*.yml` | `/etc/prometheus/targets` | what Prometheus scrapes, one file per server; picked up live |
+| `site/targets/*.yml` | `/etc/prometheus/targets` | clients Prometheus pulls instead, one file per server; picked up live |
 | `site/config/` | `/config` (the `mars` container) | config documents; optional, may stay empty |
 
-To add a server:
+To have Prometheus **pull** a server instead (it then serves `/metrics` and doesn't push):
 
-1. Instrument the app with [mars-probe](../probe/README.md) (`instrument(app, station="shop")`)
-   and run it as a single uvicorn process. It serves `/metrics`.
-2. Add a target file. Prometheus watches the folder, so no restart is needed:
+```bash
+mars-probe scrape-config --target shop.lan:8000 > deploy/site/targets/shop.yml
+```
 
-   ```bash
-   mars-probe scrape-config --target shop.lan:8000 > deploy/site/targets/shop.yml
-   ```
-
-   A file can list several nodes of one station (`--target` more than once).
-3. Make sure the Prometheus container can reach `shop.lan:8000` (DNS, firewall; see
-   [Remote servers](#remote-servers)). A server on the Docker host itself is
-   `host.docker.internal:8000`; the prod file maps that name on Linux too.
-4. Open the display's service panel (`E`) and press **Stations**: `shop` is listed under
-   *Available on Prometheus*, and **Add** puts it on the device (with its standard pages if you
-   like). See [web/README.md](../web/README.md#stations-and-cartridges).
+The Prometheus container must reach `shop.lan:8000` (DNS, firewall; see
+[Remote servers](#remote-servers)). A server on the Docker host itself is
+`host.docker.internal:8000`; the prod file maps that name on Linux too.
 
 The display saves what you add in its own browser (localStorage). To give every display the
 same stations and pages, export the document from the service panel (cartridge keys) and save
@@ -98,22 +108,26 @@ curl -s localhost:8080/prom/api/v1/targets          # the same, through MARS
 ### Linux hosts
 
 [mars-agent](../agent/README.md) turns a Linux host into a node of a station, from `/proc`
-([ADR-0009](../docs/adr/0009-linux-hosts.md)). Start it on each host with
-`MARS_STATION=fleet docker compose -f agent/compose.yaml up -d`, list the hosts on port 9110 in
-`site/targets/fleet.yml`, and load
+([ADR-0009](../docs/adr/0009-linux-hosts.md)). Make a key for the station `fleet`, put
+`MARS_PUSH_URL` and `MARS_PUSH_KEY` in `agent/.env` on each host and start it with
+`docker compose -f agent/compose.yaml up -d`, and load
 [web/public/examples/linux-fleet.json](../web/public/examples/linux-fleet.json) (`?config=` or
 as `site/config/mars.json`). A host station must not share its name with a service.
 
 ### Remote servers
 
-Prometheus pulls: it connects to each server's `/metrics`, nothing connects back.
+Pushing clients connect out to MARS's port 8080 and nothing connects back, so they work from
+behind NAT and from other networks as long as they reach that port.
 
-- **Firewall:** open the app's port (or a separate metrics port, see `metrics_path=None` in the
-  probe README) to the MARS host only, for example
-  `ufw allow from 192.168.1.20 to any port 8000 proto tcp`.
-- **Over the internet:** put the metrics behind TLS and basic auth at the server's proxy, and
-  give the scrape job credentials. Add a second job to
-  [prometheus/prometheus.yml](prometheus/prometheus.yml) (keep `honor_labels: true`):
+- **Firewall:** on the MARS machine, open 8080 to the clients' network, for example
+  `ufw allow from 192.168.1.0/24 to any port 8080 proto tcp`.
+- **Over the internet:** put MARS behind a reverse proxy with TLS, since the key travels in a
+  header, and set `MARS_PUSH_URL=https://mars.example.com`. Turn on `MARS_BASIC_AUTH` so only
+  you reach the display and `/api/keys`; `/push` stays open to holders of a key.
+- **Pulled clients:** Prometheus connects to each server's `/metrics`. Open the app's port to
+  the MARS host only. To scrape across the internet, put the metrics behind TLS and basic auth
+  and add a second job to [prometheus/prometheus.yml](prometheus/prometheus.yml) (keep
+  `honor_labels: true`):
 
   ```yaml
   - job_name: mars-remote
@@ -132,12 +146,20 @@ Prometheus pulls: it connects to each server's `/metrics`, nothing connects back
 
 - **LAN only by default.** Port `8080` is published on all interfaces so a display on the LAN
   can open it, and without `MARS_BASIC_AUTH` it has no authentication. `/prom/*` is the
-  Prometheus API (read-only: Caddy answers 403 to `/-/reload` and `/-/quit`). Don't forward
+  Prometheus API (read-only: Caddy answers 403 to `/-/reload` and `/-/quit`). `/api/keys` makes
+  and revokes push keys: without auth, anyone on the LAN can do that.
+- **Push keys.** `/push/*` takes a client's metrics with `Authorization: Bearer <key>`. A key
+  writes only into its own station, only `mars_*` series, at most 20 000 samples and 4 MiB a
+  push. Revoking a key on the keys plate stops its clients at once. Key creation accepts JSON
+  only, so a cross-site form can't make a key in a logged-in browser. Don't forward
   8080 from the internet without auth and TLS in front.
+- **mars-gateway** is published on loopback only in the demo file (`127.0.0.1:9111`, for
+  `npm run dev`) and not at all in the prod file.
 - **Prometheus** is published on loopback only in the demo file (`127.0.0.1:9090`, for
   `npm run dev`) and not at all in the prod file; MARS reaches it over the compose network.
-- **Basic auth.** Set `MARS_BASIC_AUTH` to `<user> <bcrypt hash>` and every path, `/prom` and
-  `/config` included, asks for a password. Only `/healthz` (the healthcheck) stays open. Make a
+- **Basic auth.** Set `MARS_BASIC_AUTH` to `<user> <bcrypt hash>` and every path, `/prom`,
+  `/api/keys` and `/config` included, asks for a password. Only `/healthz` (the healthcheck)
+  and `/push/*` (which checks its own key) stay open. Make a
   hash, and base64-encode it so it has no `$` for the shell or Compose to expand:
 
   ```bash
@@ -158,7 +180,7 @@ Prometheus pulls: it connects to each server's `/metrics`, nothing connects back
 
 ## Images
 
-`scripts/build-images.sh` builds `mars-web`, `mars-demo` and `mars-agent` for linux/amd64 and linux/arm64
+`scripts/build-images.sh` builds `mars-web`, `mars-demo`, `mars-agent` and `mars-gateway` for linux/amd64 and linux/arm64
 (Raspberry Pi 4/5) with `docker buildx` or Podman, tagged with the version from
 [probe/src/mars_probe/_version.py](../probe/src/mars_probe/_version.py); `--push` pushes them
 to `$REGISTRY` (default `ghcr.io/p-sodmann`). A `v*` tag does the same in CI
@@ -168,10 +190,11 @@ build machine's own platform, since its output doesn't depend on the CPU.
 ## Files
 
 - [compose.yaml](compose.yaml), [compose.prod.yaml](compose.prod.yaml): the services above.
-- [prometheus/prometheus.yml](prometheus/prometheus.yml): 1 s intervals, job `mars` with
-  `honor_labels: true` and file service discovery on `targets/*.yml`.
-- [prometheus/targets/](prometheus/targets/): the demo file's targets (the two demo stations and
-  the demo agent).
+- [prometheus/prometheus.yml](prometheus/prometheus.yml): 1 s intervals, job `mars-push`
+  (the gateway) and job `mars` with file service discovery on `targets/*.yml`, both with
+  `honor_labels: true`.
+- [prometheus/targets/](prometheus/targets/): the demo file's pulled targets. Empty: the demo
+  clients push.
 - [site/](site/): your targets and config for the prod file.
 - The recording rules are **not** in this folder: both files mount
   [probe/src/mars_probe/prometheus/](../probe/src/mars_probe/prometheus/mars.rules.yml), the
@@ -195,6 +218,9 @@ build machine's own platform, since its output doesn't depend on the CPU.
   called!` or `uv` unable to reach PyPI: the Podman machine kept the DNS set-up of the network
   it was started on. After changing networks, restart it:
   `podman machine stop && podman machine start`.
+- **A client doesn't show up on the keys plate.** Read its log: `401` is a wrong or revoked
+  key; `connection refused` or a timeout means it can't reach port 8080 (address, firewall).
+  `curl http://<mars>:8080/healthz` from the client must answer `ok`.
 - **No `mars:*` series.** Look at the targets (`/prom/api/v1/targets`, or
   <http://localhost:9090/targets> with the demo file) and the rules. Latency and ratio rules are
   absent while a station gets no requests; throughput reads 0.

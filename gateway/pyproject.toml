@@ -1,0 +1,40 @@
+[project]
+name = "mars-gateway"
+dynamic = ["version"]
+description = "Takes metrics pushed by MARS clients, checks their keys, and serves them to Prometheus"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+]
+# The parsers and encoders for both exposition formats; nothing else.
+dependencies = ["prometheus-client>=0.20"]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+mars-gateway = "mars_gateway.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/mars_gateway/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mars_gateway"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]

@@ -17,6 +17,7 @@ import {
 import { Key } from '../device.jsx';
 import { moduleNumber } from '../PageView.jsx';
 import { EditableDeck } from './EditableDeck.jsx';
+import { KeysPlate } from './KeysPlate.jsx';
 import { ModuleBay } from './ModuleBay.jsx';
 import { SettingsPlate } from './SettingsPlate.jsx';
 import { StationsPlate } from './StationsPlate.jsx';
@@ -27,7 +28,7 @@ import { StationLamp } from './controls.jsx';
 // the standard-pages chooser) and the module bay. The STATIONS key swaps the
 // plate and the bay for the stations plate (step 09), and widens the column
 // for its table; the deck stays in view, so threshold changes show as they
-// are made.
+// are made. The KEYS key does the same for the push keys plate (ADR-0010).
 //
 // edit(fn) applies a document edit and returns false (showing why on the
 // panel) when the store refuses it; onNotice(text) shows a refusal that
@@ -57,6 +58,13 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
     else onNotice('local copy not removed');
   };
   const [swapping, setSwapping] = useState(false);
+  // the keys plate; the stations plate wins while it is open too
+  const [sideWanted, setSide] = useState(null);
+  const side = stationsOpen ? null : sideWanted;
+  const toggleSide = (name) => {
+    if (stationsOpen) onStationsToggle();
+    setSide(side === name ? null : name);
+  };
   const carried = useRef(null);
   const panel = page.panels.find((p) => p.id === selected) ?? null;
 
@@ -113,7 +121,7 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
   const num = panel ? moduleNumber(first, page.panels.indexOf(panel)) : null;
 
   return (
-    <div className={`workbench${stationsOpen ? ' wide' : ''}`}>
+    <div className={`workbench${stationsOpen || side ? ' wide' : ''}`}>
       <EditableDeck
         page={page}
         stations={stations}
@@ -161,12 +169,17 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
             <Key k="⌗" active={stationsOpen} onClick={onStationsToggle} className="stations-key">
               Stations
             </Key>
+            <Key k="K" active={side === 'keys'} onClick={() => toggleSide('keys')} className="keys-key">
+              Keys
+            </Key>
           </div>
           {notice && <div className="notice">{notice}</div>}
         </section>
 
         {stationsOpen ? (
           <StationsPlate doc={doc} stations={stations} edit={edit} onPage={onPage} cartridge={cartridge} onCartridge={onCartridge} />
+        ) : side === 'keys' ? (
+          <KeysPlate doc={doc} />
         ) : stdOpen ? (
           <section className="settings">
             <header className="plate-head">
@@ -224,7 +237,7 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
           </section>
         )}
 
-        {!stationsOpen && (
+        {!stationsOpen && !side && (
           <ModuleBay
             panels={page.panels}
             swapping={swapping}

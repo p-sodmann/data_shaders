@@ -1,4 +1,4 @@
-# Prometheus for MARS (ADR-0002). Mounted by deploy/compose.yaml.
+# Prometheus for MARS (ADR-0002, ADR-0010). Mounted by both compose files.
 global:
   # 1 s everywhere: MARS shows per-second values and its Signal page looks at short periods.
   scrape_interval: 1s
@@ -10,6 +10,15 @@ rule_files:
   - /etc/prometheus/rules/*.yml
 
 scrape_configs:
+  # Clients that push (mars-agent and mars-probe with a key, ADR-0010) reach Prometheus through
+  # mars-gateway, which serves their latest pushes as one target. It sets `station` from each
+  # client's key and `instance` from its name; honor_labels keeps both.
+  - job_name: mars-push
+    honor_labels: true
+    static_configs:
+      - targets: ["mars-gateway:9111"]
+
+  # Clients that Prometheus pulls from: their /metrics, listed in targets/*.yml.
   - job_name: mars
     # The probe sets `station` itself; never let Prometheus rename it to exported_station.
     honor_labels: true

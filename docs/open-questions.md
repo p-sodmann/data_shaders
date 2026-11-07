@@ -52,6 +52,22 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   designed (ADR-0005), but Chromium prints the 404 as a console error. Harmless; Caddy could
   answer 204 for a missing `mars.json`, or the loader could ask with `HEAD` first.
 
+## Push (step 14)
+
+- **`/api/keys` has no login of its own.** Until the web interface gets authentication
+  (planned, 2026-11-07), anyone who reaches port 8080 can make and revoke push keys unless
+  `MARS_BASIC_AUTH` is on. When the login lands, put `/api/keys` behind it and drop the
+  basic-auth dependency.
+- **Per-key limits.** A key is capped per push (20 000 samples, 4 MiB) but not in the number of
+  instances it may push as, so a leaked key could add many nodes to its station. A cap per key
+  (say 64 instances), or keys bound to one instance, would bound it.
+- **Gateway throughput.** Each push is parsed in Python. Fine for a few dozen clients at 1 Hz;
+  measure before hundreds. Remote write into Prometheus is the next step up (it needs its own
+  staleness handling for `node_up`).
+- **Keys plate in the smoke test.** The plate is checked by hand against the demo stack (step
+  14) and its client by vitest; `smoke.mjs` replays recorded Prometheus answers and has no
+  gateway fixtures yet.
+
 ## Hosts (mars-agent)
 
 - **Host stations keep HTTP captions (step 13).** The latency readout says *P50 · ms* while it
@@ -89,10 +105,9 @@ step 12 sweep; user's decision to reopen rather than build them in step 12):
 - **`LOADGEN_TZ` for the daily phase.** Add `LOADGEN_TZ` (IANA name, default UTC) so the
   loadgen's daily sine peaks in local afternoon; compose passes `${TZ:-UTC}`. Today the phase
   is UTC (low at 03:00, high at 15:00).
-- **Demo targets in their own directory.** `deploy/prometheus/targets/demo.yml` is mounted
-  without the `demo` profile too, so a plain `compose.yaml` stack has two down targets. The
-  decision was a directory that only the demo resolves. `compose.prod.yaml` (step 12) mounts
-  `deploy/site/targets/` instead, so this only affects the demo file.
+- **Demo targets in their own directory.** *Moot since step 14: the demo clients push, and
+  `deploy/prometheus/targets/demo.yml` is gone, so a plain `compose.yaml` stack has no down
+  targets.*
 - **Scrape interval 5 s by default, 1 s for demo jobs.** `prometheus.yml` still scrapes
   everything every 1 s. Revisit once real series counts are known; the rules' `[1m]` windows
   work with either.
@@ -205,7 +220,9 @@ gets built.
   `/-/quit`, and :9090 is loopback-only.
 - **Remote servers:** pull. Prometheus scrapes over the network, and the docs cover firewall
   rules and an optional TLS / basic-auth scrape config. *Written in step 12
-  (deploy/README.md, Remote servers), 2026-11-07.*
+  (deploy/README.md, Remote servers), 2026-11-07.* *Changed 2026-11-07 (user's decision): clients
+  push with a key made on the display; pull stays possible
+  ([ADR-0010](adr/0010-push-gateway.md), step 14).*
 - **Pages per server or mixed pages:** both stay allowed. Ship a preset generator ("the 5
   standard pages for station X"). Built in step 06: `standardPages(id, prefix)` in
   `web/src/config/presets.js`, also on `window.__mars`, 2026-11-06.

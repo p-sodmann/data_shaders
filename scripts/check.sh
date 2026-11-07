@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs every check in the repo, the same as CI (.github/workflows/check.yml):
-#   release version, probe tests + lint, promtool rule tests, agent and demo tests + lint,
+#   release version, probe tests + lint, promtool rule tests, agent, gateway and demo tests + lint,
 #   web vitest, web build, headless smoke, shell syntax, compose file validation.
 # Works on a fresh clone. Needs uv, Node 22 + npm, and for the rule tests and compose files
 # promtool or Docker/Podman (with docker compose, podman compose or podman-compose).
@@ -24,6 +24,10 @@ grep -q "^__version__ = \"$VERSION\"\$" agent/src/mars_agent/_version.py \
   || fail "agent/src/mars_agent/_version.py isn't $VERSION"
 grep -q "ghcr.io/p-sodmann/mars-agent:$VERSION\$" agent/compose.yaml \
   || fail "agent/compose.yaml doesn't pin mars-agent:$VERSION"
+grep -q "^__version__ = \"$VERSION\"\$" gateway/src/mars_gateway/_version.py \
+  || fail "gateway/src/mars_gateway/_version.py isn't $VERSION"
+grep -q "ghcr.io/p-sodmann/mars-gateway:$VERSION\$" deploy/compose.prod.yaml \
+  || fail "deploy/compose.prod.yaml doesn't pin mars-gateway:$VERSION"
 echo "$VERSION"
 
 step "probe: pytest, ruff"
@@ -40,6 +44,14 @@ bash probe/scripts/test-rules.sh
 step "agent: pytest, ruff"
 (
   cd agent
+  uv run pytest -q
+  uv run ruff check .
+  uv run ruff format --check .
+)
+
+step "gateway: pytest, ruff"
+(
+  cd gateway
   uv run pytest -q
   uv run ruff check .
   uv run ruff format --check .

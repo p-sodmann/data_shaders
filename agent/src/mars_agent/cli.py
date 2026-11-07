@@ -1,4 +1,5 @@
-"""`mars-agent`: serves one Linux host's readings on /metrics for Prometheus (ADR-0009).
+"""`mars-agent`: one Linux host's readings for MARS (ADR-0009), pushed to mars-gateway or
+served on /metrics for Prometheus to scrape (ADR-0010).
 
 Every option has an environment variable, so the container is configured with `-e` alone.
 """
@@ -12,12 +13,16 @@ import re
 import signal
 import socket
 import sys
+import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 from ._version import __version__
 from .exposition import render
 from .host import DEFAULT_IGNORE, Host
+from .push import HEARTBEAT, endpoint
+from .push import run as push
 
 # The same pattern as the probe's station names (ADR-0003).
 STATION = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
@@ -85,6 +90,35 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
         "(MARS_STATION, default fleet)",
     )
     p.add_argument(
+        "--push-url",
+        default=env("MARS_PUSH_URL", ""),
+        metavar="URL",
+        help="push to this MARS (http://mars.lan:8080) instead of serving /metrics (MARS_PUSH_URL)",
+    )
+    p.add_argument(
+        "--push-key",
+        default=env("MARS_PUSH_KEY", ""),
+        metavar="KEY",
+        help="push key from the display's keys plate; it decides the station (MARS_PUSH_KEY)",
+    )
+    p.add_argument(
+        "--instance",
+        default=env("MARS_INSTANCE", "") or socket.gethostname(),
+        help="this host's node name when pushing (MARS_INSTANCE, default the host name)",
+    )
+    p.add_argument(
+        "--push-interval",
+        type=float,
+        default=float(env("MARS_PUSH_INTERVAL", "1")),
+        metavar="SECONDS",
+        help="MARS_PUSH_INTERVAL",
+    )
+    p.add_argument(
+        "--healthcheck",
+        action="store_true",
+        help="exit 0 if the running agent is healthy: pushed in the last 30 s, or answers /healthz",
+    )
+    p.add_argument(
         "--host",
         default=env("MARS_AGENT_HOST", ""),
         help="address to listen on; empty is every address, IPv6 and IPv4 (MARS_AGENT_HOST)",
@@ -108,14 +142,51 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     args = p.parse_args(argv)
     if not STATION.match(args.station):
         p.error(f"station {args.station!r}: lower case letters, digits and dashes, max 32")
+    if args.push_url and not args.push_key:
+        p.error("MARS_PUSH_URL needs MARS_PUSH_KEY (make one on the display: E → Keys)")
+    if args.push_interval <= 0:
+        p.error("push interval must be above 0")
     return args
+
+
+def healthcheck(args: argparse.Namespace) -> int:
+    if args.push_url:
+        try:
+            return 0 if time.time() - HEARTBEAT.stat().st_mtime < 30 else 1
+        except OSError:
+            return 1
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{args.port}/healthz", timeout=3):
+            return 0
+    except OSError:
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse(argv)
+    if args.healthcheck:
+        return healthcheck(args)
     host = Host(args.proc, args.rootfs, args.ignore_interfaces)
     for what in host.missing():
         print(f"mars-agent: can't read {what}", file=sys.stderr)
+    # As PID 1 in a container, Python would ignore SIGTERM and `docker stop` would wait 10 s.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    if args.push_url:
+        url = endpoint(args.push_url, args.instance)
+        print(
+            f"mars-agent {__version__}: node {args.instance}, pushing to {url} "
+            f"every {args.push_interval:g} s",
+            file=sys.stderr,
+            flush=True,
+        )
+        with contextlib.suppress(KeyboardInterrupt, SystemExit):
+            push(
+                url,
+                args.push_key,
+                lambda: render(args.station, __version__, host.read()).encode(),
+                args.push_interval,
+            )
+        return 0
     server = serve(args.host, args.port, handler(host, args.station))
     where = args.host if ":" not in args.host else f"[{args.host}]"
     print(
@@ -124,8 +195,6 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
         flush=True,
     )
-    # As PID 1 in a container, Python would ignore SIGTERM and `docker stop` would wait 10 s.
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     with contextlib.suppress(KeyboardInterrupt, SystemExit):
         server.serve_forever()
     server.server_close()

@@ -1,7 +1,9 @@
-# mars-agent on one Linux host (README.md). Run it on every host of the fleet:
-#   MARS_STATION=fleet docker compose -f agent/compose.yaml up -d
-# then list each host in a Prometheus target file on the MARS machine:
-#   - targets: ["web-1.lan:9110", "web-2.lan:9110", "db-1.lan:9110"]
+# mars-agent on one Linux host (README.md). Run it on every host of the fleet, with a push key
+# from the display (E → Keys; the key decides the station) in agent/.env, which Compose reads:
+#   MARS_PUSH_URL=http://mars.lan:8080
+#   MARS_PUSH_KEY=mars_…
+# then: docker compose -f agent/compose.yaml up -d
+# Without MARS_PUSH_URL it serves /metrics on port 9110 for Prometheus to scrape instead.
 name: mars-agent
 
 services:
@@ -9,11 +11,16 @@ services:
     # Without `pull`, or before this version is published, `up` builds it from this checkout.
     image: ghcr.io/p-sodmann/mars-agent:0.1.0
     build: .
-    # The host's network namespace, so /proc/net/dev counts the host's own interfaces and
-    # Prometheus reaches the agent on the host's address. There is no `ports:` with it.
+    # The host's network namespace, so /proc/net/dev counts the host's own interfaces and the
+    # host name is the host's (the node's name on the display). There is no `ports:` with it.
     network_mode: host
     environment:
-      # Every host of one fleet uses the same station; each host is one of its nodes.
+      # Push mode (ADR-0010): the agent connects out, nothing connects in.
+      MARS_PUSH_URL: ${MARS_PUSH_URL:-}
+      MARS_PUSH_KEY: ${MARS_PUSH_KEY:-}
+      # The node's name; empty is the host name.
+      MARS_INSTANCE: ${MARS_INSTANCE:-}
+      # Pull mode only: every host of one fleet uses the same station; each host is one node.
       MARS_STATION: ${MARS_STATION:-fleet}
       MARS_AGENT_PORT: ${MARS_AGENT_PORT:-9110}
       MARS_ROOTFS: /host
@@ -21,8 +28,9 @@ services:
       # Only for the disk use of the host's root filesystem (statvfs); read-only.
       - /:/host:ro,rslave
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:$${MARS_AGENT_PORT}/healthz"]
+      # Pushed in the last 30 s (push mode), or /healthz answers (pull mode).
+      test: ["CMD", "python", "-m", "mars_agent", "--healthcheck"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 3
     restart: unless-stopped

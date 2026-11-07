@@ -4,15 +4,18 @@ A cassette-futurist monitoring display for a spare screen: a Braun-style device 
 are CRT phosphor shaders, fed by the metrics of your own FastAPI servers.
 
 ```
-FastAPI app + mars-probe  ──►  Prometheus (recording rules)  ──►  MARS web app
-  (Python, probe/)               (deploy/)                          (web/)
-Linux host + mars-agent   ──►
-  (agent/)
+FastAPI app + mars-probe ──push──►  mars-gateway  ──►  Prometheus           ──►  MARS web app
+  (Python, probe/)          key       (gateway/)        (recording rules,          (web/)
+Linux host + mars-agent  ──push──►                       deploy/)
+  (agent/)                  key
 ```
 
-The probe instruments a service, Prometheus scrapes it and pre-computes the signals the
-instruments need, and the display reads them. Without a backend the display runs on its
-built-in simulator.
+The probe instruments a service and the agent measures a Linux host. Both push their metrics
+to the display once a second with a key made on the display; the gateway checks the key and
+hands the metrics to Prometheus, which pre-computes the signals the instruments need, and the
+display reads them ([ADR-0010](docs/adr/0010-push-gateway.md)). Prometheus can still pull
+clients that serve `/metrics` instead. Without a backend the display runs on its built-in
+simulator.
 
 ## Quick start
 
@@ -27,8 +30,9 @@ cd mars
 docker compose -f deploy/compose.yaml --profile demo up -d --build
 ```
 
-Open <http://localhost:8080> and press `F` for fullscreen. This runs Prometheus, two demo
-stations (`api`, `search`) with a load generator, and MARS. The data starts after about 15 s,
+Open <http://localhost:8080> and press `F` for fullscreen. This runs Prometheus, the push
+gateway, two demo stations (`api`, `search`) with a load generator, a demo host (`fleet`), and
+MARS. The demo clients push with keys from the compose file. The data starts after about 15 s,
 and the daily swing is compressed into 10 minutes. `docker compose -f deploy/compose.yaml
 --profile demo down` stops it.
 
@@ -58,14 +62,25 @@ single uvicorn process.
    pip install "mars-probe @ git+https://github.com/p-sodmann/data_shaders#subdirectory=probe"
    ```
 
-2. **Instrument the app.** One call adds the middleware and serves `/metrics`:
+2. **Start MARS and make a key:**
+
+   ```bash
+   docker compose -f deploy/compose.prod.yaml up -d
+   ```
+
+   Open <http://localhost:8080>, press `E`, then **Keys**. Name the key, type the station
+   `hello` (lower case, digits and dashes), and press **Make key**. Copy the key: it is shown
+   once.
+
+3. **Instrument the app.** One call adds the middleware; with the two variables below it
+   pushes to MARS once a second:
 
    ```python
    from fastapi import FastAPI
    from mars_probe import instrument
 
    app = FastAPI()
-   instrument(app, station="hello")  # lower case, digits and dashes
+   instrument(app, station="hello")  # the key decides the station when pushing
 
 
    @app.get("/")
@@ -73,39 +88,35 @@ single uvicorn process.
        return {"hello": "world"}
    ```
 
-3. **Run it** where Prometheus can reach it: `uvicorn main:app --host 0.0.0.0 --port 8000`.
-   `curl localhost:8000/metrics` should list `mars_info{station="hello",…}`.
-
-4. **Tell Prometheus** about it with a target file (picked up without a restart):
+4. **Run it** with the display's address and the key:
 
    ```bash
-   mars-probe scrape-config --target host.docker.internal:8000 > deploy/site/targets/hello.yml
+   MARS_PUSH_URL=http://localhost:8080 MARS_PUSH_KEY=mars_… uvicorn main:app
    ```
 
-   `host.docker.internal` is the machine running Docker. For a server elsewhere, use its
-   address (`shop.lan:8000`) and open that port to the MARS host only.
+   The app needs no port that MARS can reach, only a way out to the display. The keys plate
+   lists it by its host name within a second.
 
-5. **Start MARS and add the station:**
+5. **Add the station:** send your app a few requests, press `E`, then **Stations**: `hello` is
+   listed under *Available on Prometheus*. **Add** puts it on the device, together with its
+   five standard pages if you like.
 
-   ```bash
-   docker compose -f deploy/compose.prod.yaml up -d
-   ```
-
-   Open <http://localhost:8080>, send your app a few requests, press `E`, then **Stations**:
-   `hello` is listed under *Available on Prometheus*. **Add** puts it on the device, together
-   with its five standard pages if you like.
+To let Prometheus pull instead, leave the variables out, run the app where Prometheus can
+reach it (`--host 0.0.0.0`) and add a target file:
+`mars-probe scrape-config --target host.docker.internal:8000 > deploy/site/targets/hello.yml`.
 
 ## Monitor a fleet of Linux hosts
 
 New to all of this? The [step-by-step tutorial](docs/tutorial-linux-fleet.md) starts from
 installing Docker. The short version:
 
-Run [mars-agent](agent/README.md) on every host with the same station name, list the hosts in
-a target file, and load the fleet example:
+Make a key for the station `fleet` on the display (`E` → **Keys**), run
+[mars-agent](agent/README.md) with it on every host, and load the fleet example:
 
 ```bash
-MARS_STATION=fleet docker compose -f agent/compose.yaml up -d      # on each host
-echo '- targets: ["web-1.lan:9110", "web-2.lan:9110"]' > deploy/site/targets/fleet.yml
+# on each host, in a checkout of this repo
+printf 'MARS_PUSH_URL=http://mars.lan:8080\nMARS_PUSH_KEY=mars_…\n' > agent/.env
+docker compose -f agent/compose.yaml up -d
 ```
 
 Then open <http://localhost:8080/?config=/examples/linux-fleet.json>. Each host is a node of
@@ -125,6 +136,7 @@ servers, a shared config for all displays, basic auth and the security notes are
 web/            MARS display (Vite + React + WebGL2)        → web/README.md
 probe/          mars-probe Python package                   → probe/README.md
 agent/          mars-agent: Linux hosts as fleet nodes      → agent/README.md
+gateway/        mars-gateway: push keys, pushes → Prometheus → gateway/README.md
 examples/demo/  demo FastAPI service + load generator       → examples/demo/README.md
 deploy/         Docker Compose, Prometheus config, kiosk    → deploy/README.md, deploy/KIOSK.md
 scripts/        check.sh (every check), build-images.sh     
@@ -140,7 +152,7 @@ service runs with `uv` ([examples/demo/README.md](examples/demo/README.md)).
 scripts/check.sh
 ```
 
-runs every check, the same as CI: probe tests and lint, the promtool rule tests, agent and demo tests,
+runs every check, the same as CI: probe tests and lint, the promtool rule tests, agent, gateway and demo tests,
 web unit tests and build, the headless smoke test, and the compose files. It needs `uv`,
 Node 22, and Docker or Podman (or a local `promtool`). Releases: [CHANGELOG.md](CHANGELOG.md);
 a `v*` tag builds the multi-arch images and the probe wheel.

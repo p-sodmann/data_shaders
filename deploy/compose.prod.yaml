@@ -1,7 +1,8 @@
 # MARS for your own servers: released images, no demo, Prometheus not published (step 12).
 #   docker compose -f deploy/compose.prod.yaml up -d
-# MARS: http://<this host>:8080. Your files live in deploy/site/ (see deploy/README.md):
-#   site/targets/*.yml   what Prometheus scrapes (`mars-probe scrape-config`), picked up live
+# MARS: http://<this host>:8080. Clients push to it with a key made on the display (E → Keys,
+# ADR-0010). Your files live in deploy/site/ (see deploy/README.md):
+#   site/targets/*.yml   clients Prometheus pulls instead (`mars-probe scrape-config`), picked up live
 #   site/config/         config documents, served at /config/ (optional; may stay empty)
 # MARS_BASIC_AUTH='<user> <bcrypt hash>' in the environment turns on basic auth (README#security).
 name: mars-prod
@@ -22,8 +23,27 @@ services:
       - ./site/config:/config:ro
     depends_on:
       - prometheus
+      - mars-gateway
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Takes pushes from mars-agent and mars-probe and checks their keys (ADR-0010). No ports:
+  # clients reach it through MARS at /push, Prometheus over the compose network.
+  mars-gateway:
+    image: ghcr.io/p-sodmann/mars-gateway:0.1.0
+    build: ../gateway
+    environment:
+      # Optional keys from the environment, `<station>:<key>` pairs; the display can't revoke
+      # these. Keys made on the display are kept in the gateway-data volume.
+      MARS_PUSH_KEYS: ${MARS_PUSH_KEYS:-}
+    volumes:
+      - gateway-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9111/healthz"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -59,3 +79,4 @@ services:
 
 volumes:
   prometheus-data:
+  gateway-data:

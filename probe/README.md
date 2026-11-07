@@ -39,7 +39,8 @@ async def item(item_id: int):
 ```
 
 `instrument(app, station, *, max_inflight=None, metrics_path="/metrics", exemplar_rate=1.0,
-exclude_paths=("/metrics",), stages=(), regions=None)`:
+exclude_paths=("/metrics",), stages=(), regions=None, push_url=None, push_key=None,
+instance=None)`:
 
 - `station` must match `^[a-z][a-z0-9-]{0,31}$`. It is the `station` label on every series.
 - `max_inflight` feeds the saturation rule (`mars_http_requests_in_flight_limit`, 0 if unset).
@@ -53,6 +54,8 @@ exclude_paths=("/metrics",), stages=(), regions=None)`:
   first enters them.
 - `regions` is a `RegionConfig` (see [Client regions](#client-regions)). Without it every
   request is `region="unknown"`.
+- `push_url`, `push_key` and `instance` turn on push mode (see [Push](#push)). They default to
+  the `MARS_PUSH_URL`, `MARS_PUSH_KEY` and `MARS_INSTANCE` environment variables.
 
 `stage(name)` works as `with`, `async with` and as a decorator on sync and async functions.
 Inside a request it records to the app serving that request; outside one, to the most
@@ -60,6 +63,24 @@ recently instrumented app; with no probe at all it does nothing. `probe.stage(na
 records to that probe.
 
 Call `instrument()` before the app starts serving (it uses `app.add_middleware`).
+
+## Push
+
+With a key from the display (`E` → **Keys**), the probe pushes its metrics to MARS once a
+second from a daemon thread, so the app needs no port that Prometheus can reach
+([ADR-0010](../docs/adr/0010-push-gateway.md)):
+
+```bash
+MARS_PUSH_URL=http://mars.lan:8080 MARS_PUSH_KEY=mars_… uvicorn main:app
+```
+
+or `instrument(app, station="api", push_url="http://mars.lan:8080", push_key=key)`. Pushes
+are OpenMetrics, so exemplars travel too. The key decides the station: the display's gateway
+replaces the `station` label with the key's. The node's name is `instance`, else
+`MARS_INSTANCE`, else the host name. A failed push is logged once per new error (logger
+`mars_probe`) and retried, backing off to every 10 s. `/metrics` is still served unless
+`metrics_path=None`; don't let Prometheus pull an app that also pushes, or it shows as two
+nodes. `probe.pusher.stop()` stops pushing.
 
 ## Client regions
 

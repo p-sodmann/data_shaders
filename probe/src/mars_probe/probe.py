@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import socket
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
@@ -14,6 +16,7 @@ from .collectors import CpuCollector
 from .exemplars import TokenBucket
 from .exposition import MetricsApp
 from .middleware import MarsMiddleware
+from .push import Pusher
 from .regions import RegionConfig, RegionResolver, no_region
 
 if TYPE_CHECKING:
@@ -112,6 +115,14 @@ class Probe:
         # most of the per-request cost if done each time.
         self._duration_children: dict[tuple[str, str, str, str], Histogram] = {}
         self._stage_children: dict[str, Histogram] = {}
+        self.pusher: Pusher | None = None
+
+    def push(self, url: str, key: str, instance: str | None = None, interval: float = 1.0) -> None:
+        """Push to mars-gateway at `url` from a background thread (ADR-0010)."""
+        if self.pusher:
+            raise RuntimeError("this probe already pushes")
+        self.pusher = Pusher(self.registry, url, key, instance or socket.gethostname(), interval)
+        self.pusher.start()
 
     def observe_request(
         self, route: str, method: str, code_class: str, region: str, seconds: float, status: int
@@ -165,8 +176,16 @@ def instrument(
     exclude_paths: Iterable[str] = ("/metrics",),
     stages: Iterable[str] = (),
     regions: RegionConfig | None = None,
+    push_url: str | None = None,
+    push_key: str | None = None,
+    instance: str | None = None,
 ) -> Probe:
     """Instrument a FastAPI/Starlette app and (unless `metrics_path` is None) serve /metrics.
+
+    `push_url` and `push_key` (default: the MARS_PUSH_URL and MARS_PUSH_KEY environment
+    variables) push the metrics to mars-gateway every second instead (ADR-0010); the key, made
+    on the display's keys plate, decides the station. `instance` is the node's name (default
+    MARS_INSTANCE, else the host name).
 
     `stages` is the pipeline order of the app's `stage()` names, exported as `mars_stage_info`.
     Stages not listed follow in the order the process first sees them.
@@ -186,6 +205,12 @@ def instrument(
         regions=regions,
     )
     app.add_middleware(MarsMiddleware, probe=probe)
+    push_url = push_url if push_url is not None else os.environ.get("MARS_PUSH_URL", "")
+    push_key = push_key if push_key is not None else os.environ.get("MARS_PUSH_KEY", "")
+    if push_url:
+        if not push_key:
+            raise ValueError("push_url needs push_key (make one on the display: E → Keys)")
+        probe.push(push_url, push_key, instance or os.environ.get("MARS_INSTANCE") or None)
     # Stages outside any request go to the most recently instrumented app.
     _stages.set_default(probe)
     return probe

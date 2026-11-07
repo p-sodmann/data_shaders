@@ -10,3 +10,5 @@ web/test-results/
 web/snapshots/
 # may hold MARS_BASIC_AUTH
 deploy/.env
+# may hold MARS_PUSH_KEY (agent/README.md)
+agent/.env

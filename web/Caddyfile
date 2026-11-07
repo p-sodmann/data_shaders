@@ -30,6 +30,16 @@
 		reverse_proxy {$PROMETHEUS_URL:prometheus:9090}
 	}
 
+	# mars-gateway (ADR-0010). /push/* carries its own key in an Authorization header, so it is
+	# left out of the basic auth above (mars-entrypoint.sh); /api/keys, where keys are made and
+	# revoked, is behind it.
+	handle /push/* {
+		reverse_proxy {$GATEWAY_URL:mars-gateway:9111}
+	}
+	handle /api/keys* {
+		reverse_proxy {$GATEWAY_URL:mars-gateway:9111}
+	}
+
 	# Config documents (step 06). Never cached, so an edited mars.json shows up on reload.
 	# No directory listing: /config/ answers 404.
 	handle_path /config/* {

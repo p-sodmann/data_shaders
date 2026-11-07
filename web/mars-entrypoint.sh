@@ -1,6 +1,7 @@
 #!/bin/sh
 # MARS_BASIC_AUTH="<user> <bcrypt hash>" puts HTTP basic auth in front of everything, /prom
-# included, except /healthz (the compose healthcheck). Unset, the display is open to the LAN
+# and /api/keys included, except /healthz (the compose healthcheck) and /push/* (clients send
+# their own push key there, ADR-0010). Unset, the display is open to the LAN
 # like before. Make a hash with: caddy hash-password  (or: docker run --rm caddy:2-alpine
 # caddy hash-password --plaintext '…'). See deploy/README.md#security.
 set -eu
@@ -18,7 +19,7 @@ if [ -n "${MARS_BASIC_AUTH:-}" ]; then
 		;;
 	esac
 	cat >"$snippet" <<-SNIPPET
-		@locked not path /healthz
+		@locked not path /healthz /push/*
 		basic_auth @locked {
 			$user $hash
 		}

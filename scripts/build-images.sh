@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the mars (web), demo and agent images for linux/amd64 and linux/arm64 (Raspberry Pi 4/5).
+# Builds the mars (web), demo, agent and gateway images for linux/amd64 and linux/arm64 (Raspberry Pi 4/5).
 #   scripts/build-images.sh            # build both platforms, keep them local
 #   scripts/build-images.sh --push     # and push to $REGISTRY (log in first)
 # Uses docker buildx if it is there, else podman (manifest lists). Cross-building needs QEMU
@@ -20,6 +20,7 @@ IMAGES=(
   "mars-web $ROOT/web $ROOT/web/Dockerfile"
   "mars-demo $ROOT $ROOT/examples/demo/Dockerfile"
   "mars-agent $ROOT/agent $ROOT/agent/Dockerfile"
+  "mars-gateway $ROOT/gateway $ROOT/gateway/Dockerfile"
 )
 
 if docker buildx version >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
@@ -48,4 +49,4 @@ else
   echo "build-images: need docker buildx or podman" >&2
   exit 1
 fi
-echo "built $REGISTRY/{mars-web,mars-demo,mars-agent}:$VERSION for $PLATFORMS"
+echo "built $REGISTRY/{mars-web,mars-demo,mars-agent,mars-gateway}:$VERSION for $PLATFORMS"

@@ -13,6 +13,18 @@ if the prod compose tag or this file don't follow it. The format follows
 
 ### Added
 
+- **Push with keys** ([ADR-0010](docs/adr/0010-push-gateway.md)): `mars-gateway`
+  ([gateway/](gateway/README.md), image `mars-gateway`) takes pushes at `/push/<instance>` with
+  `Authorization: Bearer <key>`, gives every sample its key's station, and serves the latest
+  push of each client to Prometheus (job `mars-push`). Keys are made and revoked on the new
+  keys plate (`E` → **Keys**) through `/api/keys`, or come from `MARS_PUSH_KEYS`.
+  `MARS_BASIC_AUTH` covers `/api/keys` and leaves `/push/*` out.
+- `mars-agent` pushes when `MARS_PUSH_URL` and `MARS_PUSH_KEY` are set (no open port then), and
+  has `--healthcheck`. `mars-probe` pushes OpenMetrics from a thread with
+  `instrument(…, push_url=…, push_key=…)` or the same variables.
+- `mars:node_up` covers pushed nodes through `mars_push_up` (**metric contract change**,
+  ADR-0003's rule amended; pulled nodes unchanged).
+
 - `mars-agent` ([agent/](agent/README.md), image `mars-agent`): a Linux host as a node of a
   station, from `/proc` and `statvfs`, standard library only. A compose file for monitored
   hosts (host network, `/` read-only), and a `demo-host` agent in the demo stack.
@@ -25,6 +37,10 @@ if the prod compose tag or this file don't follow it. The format follows
 
 ### Changed
 
+- The demo stack pushes: the demo clients send through Caddy with keys from `MARS_PUSH_KEYS`,
+  and `deploy/prometheus/targets/demo.yml` is gone. Pushed nodes are named by host
+  (`demo-api`), not `host:port`.
+- The tutorial and the READMEs set clients up with push; pulling stays documented.
 - The Fleet strands and Slices instruments scale with the station's `thresh.max` (they had
   45 ms and 40 ms built in; the default `max` of 60 gives the same values).
 - The latency readout shows two decimals below 1 ms.

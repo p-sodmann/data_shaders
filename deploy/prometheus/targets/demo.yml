@@ -1,6 +1,0 @@
-# The demo stations (compose profile `demo`): two services and one mars-agent host. Without
-# that profile these targets are simply down; delete this file if you don't run the demo.
-- targets:
-    - demo-api:8000
-    - demo-search:8000
-    - demo-host:9110

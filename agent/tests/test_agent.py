@@ -6,7 +6,7 @@ import re
 import socket
 import threading
 import urllib.request
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -14,6 +14,8 @@ from mars_agent import __version__
 from mars_agent.cli import handler, parse, serve
 from mars_agent.exposition import render
 from mars_agent.host import DEFAULT_IGNORE, Host, net_packets, schedstat
+from mars_agent.push import endpoint
+from mars_agent.push import run as push
 
 STAT = """\
 cpu  363296 0 17075 1077651 506 4111 1900 0 0 0
@@ -158,3 +160,79 @@ def test_listens_on_ipv6_and_ipv4(proc, tmp_path):
                 assert resp.read() == b"ok\n", url
     finally:
         server.shutdown()
+
+
+class Gateway:
+    """A stand-in for mars-gateway: records pushes, answers `status`."""
+
+    def __init__(self, status=204):
+        self.pushes = []
+        gw = self
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                gw.pushes.append((self.path, dict(self.headers), body.decode()))
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *_):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_push(proc, tmp_path):
+    gw = Gateway()
+    host = Host(str(proc), str(tmp_path))
+    beat = tmp_path / "pushed"
+    try:
+        push(
+            endpoint(gw.url + "/", "web 1"),
+            "mars_k3y",
+            lambda: render("fleet", "0.1.0", host.read()).encode(),
+            interval=0.01,
+            heartbeat=beat,
+            stop=lambda: len(gw.pushes) >= 3,
+        )
+    finally:
+        gw.close()
+    path, headers, body = gw.pushes[0]
+    assert path == "/push/web%201"
+    assert headers["Authorization"] == "Bearer mars_k3y"
+    assert headers["Content-Type"].startswith("text/plain; version=0.0.4")
+    assert 'mars_host_cpus{station="fleet"} 4' in body
+    assert beat.exists()
+
+
+def test_push_logs_a_refused_key_once(proc, tmp_path, capsys):
+    gw = Gateway(status=401)
+    try:
+        push(
+            endpoint(gw.url, "web-1"),
+            "wrong",
+            lambda: b"",
+            interval=0.001,
+            heartbeat=tmp_path / "pushed",
+            stop=lambda: len(gw.pushes) >= 3,
+        )
+    finally:
+        gw.close()
+    err = capsys.readouterr().err
+    assert err.count("doesn't know this key") == 1
+    assert not (tmp_path / "pushed").exists()
+
+
+def test_push_options():
+    args = parse(["--push-url", "http://mars:8080", "--push-key", "k", "--instance", "web-1"])
+    assert (args.push_url, args.instance) == ("http://mars:8080", "web-1")
+    assert parse([]).instance == socket.gethostname()
+    with pytest.raises(SystemExit):
+        parse(["--push-url", "http://mars:8080"])  # no key

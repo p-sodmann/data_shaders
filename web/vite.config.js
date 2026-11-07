@@ -10,6 +10,9 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/prom/, ''),
       },
+      // mars-gateway (ADR-0010): the keys plate, and pushes from clients pointed at the dev server.
+      '/api/keys': 'http://localhost:9111',
+      '/push': 'http://localhost:9111',
     },
   },
 });

@@ -19,8 +19,12 @@ There are two kinds of computer in this guide:
   Debian, Fedora, Raspberry Pi OS…). Each one gets a small helper program, **mars-agent**, that
   measures how busy the computer is.
 - **The display computer.** This one runs **MARS**, the screen with the lamps and the needle.
-  It can be a Mac, a Linux PC or a Raspberry Pi. It asks every host for its numbers once a
-  second and draws them.
+  It can be a Mac, a Linux PC or a Raspberry Pi. Every host sends it its numbers once a second,
+  and it draws them.
+
+A host proves it may send numbers with a **key**: a long password that you make on the display
+in step 5 and give to the agent in step 6. The hosts call the display, never the other way
+round, so the hosts need no open ports and you don't have to collect their addresses.
 
 The display computer can also be one of the hosts. That's fine, and step 6 says what to do then.
 
@@ -35,7 +39,7 @@ All the hosts together are called the **fleet**. Each host is one **node** of th
 - [ ] A way to type commands on every one of these computers (step 1 shows how).
 - [ ] The password of a user that may install software on each computer (an *administrator*,
       the one that works with `sudo`).
-- [ ] A piece of paper to write down addresses. You'll need it in step 4.
+- [ ] A piece of paper for the display computer's address. You'll need it in step 4.
 
 ---
 
@@ -145,114 +149,9 @@ later, type `cd ~/mars` first.
 
 ---
 
-## Step 4: start the agent on every host
+## Step 4: start MARS on the display computer
 
-Do this on **each host** (each computer you want to watch). Skip the display computer, unless
-it should be watched too.
-
-1. Go to the folder and start the agent:
-
-   ```bash
-   cd ~/mars
-   sudo docker compose -f agent/compose.yaml up -d --build
-   ```
-
-   The first time this downloads and builds for a minute or two. At the end it says something
-   like `Container mars-agent-mars-agent-1  Started`.
-
-2. Check that it measures something:
-
-   ```bash
-   curl -s localhost:9110/metrics | grep mars_host_cpus
-   ```
-
-   ✅ You should see one line like `mars_host_cpus{station="fleet"} 4`. The number is how many
-   processor cores this computer has.
-
-3. Find this host's address and **write it on your paper** together with a name you'll
-   recognise (for example *"living room PC – 192.168.1.50"*):
-
-   ```bash
-   hostname -I
-   ```
-
-   The first group of four numbers is the address, for example `192.168.1.50`. Ignore anything
-   after the first space.
-
-4. Is there a firewall on this host? Check:
-
-   ```bash
-   sudo ufw status
-   ```
-
-   - If it says `Status: inactive` or `command not found`, there's nothing to do.
-   - If it says `Status: active`, let the display computer in. Replace `192.168.1.20` with the
-     **display computer's** address (run `hostname -I` there to find it; on a Mac use
-     `ipconfig getifaddr en0`):
-
-     ```bash
-     sudo ufw allow from 192.168.1.20 to any port 9110 proto tcp
-     ```
-
-The agent now starts by itself whenever the host restarts. You never have to start it again.
-
-**Repeat step 4 on every host** before going on.
-
----
-
-## Step 5: check from the display computer that it can reach each host
-
-On the **display computer**, open a web browser and go to this address, using one host's
-address from your paper:
-
-```
-http://192.168.1.50:9110/metrics
-```
-
-✅ A page full of text lines starting with `mars_` appears. That host is reachable.
-
-❌ If the page doesn't load, see [The page at :9110 doesn't load](#the-page-at-9110-doesnt-load)
-under *When something goes wrong*.
-
-Try every host on your paper.
-
----
-
-## Step 6: tell MARS which hosts to watch
-
-Still on the **display computer**:
-
-1. Open a new, empty list of hosts in a simple text editor called *nano*:
-
-   ```bash
-   cd ~/mars
-   nano deploy/site/targets/fleet.yml
-   ```
-
-2. Type this, with **your** addresses from the paper, each followed by `:9110`:
-
-   ```yaml
-   - targets:
-       - 192.168.1.50:9110
-       - 192.168.1.51:9110
-       - 192.168.1.52:9110
-   ```
-
-   The spaces at the start of the lines matter: two spaces before `targets`, six before each
-   address. Use the space bar, not the Tab key. List as many hosts as you have, one per line.
-
-   **If the display computer is also a host** (you did step 4 on it), list it as
-   `host.docker.internal:9110` instead of its address.
-
-3. Save and close nano: press **Ctrl + O**, then **Enter** (that saves), then **Ctrl + X** (that
-   closes). On a Mac it's the **Control** key too, not ⌘ Cmd.
-
-You can add or remove hosts in this file at any time later. MARS notices within about 10
-seconds; there is nothing to restart.
-
----
-
-## Step 7: start MARS on the display computer
+On the **display computer**:
 
 ```bash
 cd ~/mars
@@ -260,18 +159,136 @@ sudo docker compose -f deploy/compose.prod.yaml up -d --build
 ```
 
 The first time this takes a few minutes (it downloads and builds the display). At the end it
-says that `mars-prod-prometheus-1` and `mars-prod-mars-1` have started.
+says that `mars-prod-prometheus-1`, `mars-prod-mars-gateway-1` and `mars-prod-mars-1` have
+started. MARS starts by itself whenever the display computer restarts.
 
-Check that MARS sees your hosts:
+1. Find the display computer's address and **write it on your paper**:
 
-```bash
-curl -s localhost:8080/prom/api/v1/query --data-urlencode 'query=mars:node_up{station="fleet"}'
+   ```bash
+   # Linux:
+   hostname -I
+   # Mac:
+   ipconfig getifaddr en0
+   ```
+
+   On Linux, the first group of four numbers is the address, for example `192.168.1.20`.
+   Ignore anything after the first space.
+
+2. Is there a firewall on the display computer? On Linux, check:
+
+   ```bash
+   sudo ufw status
+   ```
+
+   - If it says `Status: inactive` or `command not found`, there's nothing to do.
+   - If it says `Status: active`, let the hosts in. This allows every computer on a home
+     network that starts with `192.168.1.`; change it to match your address:
+
+     ```bash
+     sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp
+     ```
+
+   On a Mac, if macOS asks whether Docker may accept incoming connections, click **Allow**.
+
+---
+
+## Step 5: make a key for your fleet
+
+Still on the **display computer**, open a web browser and go to:
+
+```
+http://localhost:8080
 ```
 
-✅ The answer contains each of your hosts' addresses, each followed by `"1"` (1 means *up*).
-If a host is missing, wait 20 seconds and try again.
+1. Press **E** on the keyboard. The service panel opens on the right.
+2. Click the **K** key labelled **Keys**. The *Push keys* plate opens.
+3. Under *New key*, type a **Name** you'll recognise, for example `my computers`, and press
+   **Enter**.
+4. In **Station**, type `fleet` and press **Enter**. (*Station* is the group your computers
+   show up in. The example layout in step 8 reads `fleet`.)
+5. Click **Make key**.
 
-MARS, too, starts by itself after a restart of the display computer.
+✅ A box appears with a long key starting with `mars_`, and the words *shown once · copy it
+now*. Click **Copy key** and paste it somewhere safe, or write it on your paper. **MARS shows
+this key only this once.** If you lose it, make a new one; nothing breaks.
+
+All your hosts can use this one key. Leave the page open; you'll watch the hosts arrive here
+in step 7.
+
+---
+
+## Step 6: start the agent on every host
+
+Do this on **each host** (each computer you want to watch). Skip the display computer, unless
+it should be watched too.
+
+1. Check that this host can reach the display computer. Replace `192.168.1.20` with the
+   address on your paper:
+
+   ```bash
+   curl -s http://192.168.1.20:8080/healthz
+   ```
+
+   ✅ It answers `ok`. ❌ If it says `Connection refused`, waits for a long time or prints
+   nothing, see [A host doesn't show up](#a-host-doesnt-show-up).
+
+2. Tell the agent where to send its numbers and which key to use. Open a new file in a simple
+   text editor called *nano*:
+
+   ```bash
+   cd ~/mars
+   nano agent/.env
+   ```
+
+   Type these two lines, with **your** display address and **your** key:
+
+   ```
+   MARS_PUSH_URL=http://192.168.1.20:8080
+   MARS_PUSH_KEY=mars_PASTE-YOUR-KEY-HERE
+   ```
+
+   No spaces around the `=`. Save and close nano: press **Ctrl + O**, then **Enter** (that
+   saves), then **Ctrl + X** (that closes).
+
+   **If the display computer is also a host** (you're doing step 6 on it), write
+   `MARS_PUSH_URL=http://localhost:8080` instead.
+
+3. Start the agent:
+
+   ```bash
+   sudo docker compose -f agent/compose.yaml up -d --build
+   ```
+
+   The first time this downloads and builds for a minute or two. At the end it says something
+   like `Container mars-agent-mars-agent-1  Started`.
+
+4. Check that it sends:
+
+   ```bash
+   sudo docker compose -f agent/compose.yaml logs
+   ```
+
+   ✅ The last line reads `mars-agent: pushing to http://192.168.1.20:8080/push/…`, ending in
+   this host's name.
+
+The agent now starts by itself whenever the host restarts, and it remembers the address and
+the key (they're in `agent/.env`). You never have to start it again.
+
+**Repeat step 6 on every host** before going on.
+
+---
+
+## Step 7: check that MARS sees every host
+
+Back on the **display computer**, look at the *Push keys* plate from step 5 (press **E**, then
+**Keys**, if you closed it).
+
+✅ Your key's row shows a green lamp, and under it the names of your hosts. *Nodes* counts
+them: `3/3` means three hosts, all sending. *Push* says how long ago the last numbers came,
+normally `0 s` or `1 s`.
+
+A host that is missing hasn't sent anything yet: see
+[A host doesn't show up](#a-host-doesnt-show-up). Press **Esc** to close the service panel.
 
 ---
 
@@ -368,25 +385,37 @@ Docker isn't running. On Linux: `sudo systemctl start docker`. On a Mac: start *
 
 You're not in the `mars` folder. Type `cd ~/mars` and run the command again.
 
-### The page at :9110 doesn't load
+### A host doesn't show up
 
-From the display computer, `http://<host address>:9110/metrics` doesn't open:
+On that host, look at what the agent says:
 
-1. On the host, check that the agent runs: `sudo docker ps`. You should see a line with
-   `mars-agent`. If not, run step 4 again.
-2. Check the address: on the host, `hostname -I`. Did it change? Home routers sometimes hand
-   out new addresses. In your router's settings you can give each computer a fixed one (often
-   called *DHCP reservation*).
-3. Firewall: see step 4, point 4.
-4. Are both computers on the same network? A guest Wi-Fi often can't reach the main network.
+```bash
+cd ~/mars
+sudo docker compose -f agent/compose.yaml logs
+```
+
+- **`401: the gateway doesn't know this key`**: the key in `agent/.env` is wrong (a typo, a
+  missing character) or was revoked. Copy it again, or make a new one (step 5), fix
+  `agent/.env`, and run `sudo docker compose -f agent/compose.yaml up -d` again.
+- **`Connection refused`, `timed out` or `Name or service not known`**: the host can't reach
+  the display computer.
+  1. Is MARS running there? On the display computer: `sudo docker compose -f
+     deploy/compose.prod.yaml ps`. All three should say `Up`.
+  2. Is the address right? Run `hostname -I` on the display computer again. Did it change?
+     Home routers sometimes hand out new addresses. In your router's settings you can give the
+     display computer a fixed one (often called *DHCP reservation*).
+  3. Firewall on the display computer: see step 4, point 2.
+  4. Are both computers on the same network? A guest Wi-Fi often can't reach the main network.
+- **It says `serves /metrics` instead of `pushing to`**: the agent didn't find `agent/.env`.
+  Check that the file is in `~/mars/agent/` and is called exactly `.env` (`ls -a agent`).
 
 ### A lamp is dark with a line through it
 
-That computer stopped answering: it's switched off, asleep, off the network, or its agent
-stopped. Switch it on or run step 4 on it again. The lamp comes back on its own within a few
-seconds.
+That computer stopped sending: it's switched off, asleep, off the network, its agent stopped,
+or its key was revoked. Switch it on or run step 6 on it again. The lamp comes back on its own
+within a few seconds.
 
-A computer you removed from `fleet.yml` also stays dark until you reload the page (**F5**).
+A computer you removed for good also stays dark until you reload the page (**F5**).
 
 ### The tape and the latency number stay empty, but the lamps work
 
@@ -414,23 +443,28 @@ cd ~/mars
 sudo docker compose -f deploy/compose.prod.yaml ps
 ```
 
-Both `mars` and `prometheus` should say `Up`. If not, run step 7 again. If they are up, check
-step 7's `curl` command: it must list your hosts.
+`mars`, `mars-gateway` and `prometheus` should all say `Up`. If not, run step 4 again. If
+they are up, check the keys plate (step 7): it must list your hosts.
 
 ---
 
 ## Everyday tasks
 
-**Add a computer to the fleet:** do steps 2, 3 and 4 on it, then add its address to
-`deploy/site/targets/fleet.yml` (step 6). It appears as a new lamp within a few seconds, no
-reload needed.
+**Add a computer to the fleet:** do steps 2, 3 and 6 on it, with the same key. It appears as
+a new lamp within a few seconds, no reload needed.
 
-**Remove a computer:** delete its line from `fleet.yml`. On that computer, stop the agent:
+**Remove a computer:** on that computer, stop the agent:
 
 ```bash
 cd ~/mars
 sudo docker compose -f agent/compose.yaml down
 ```
+
+**A key got out** (you pasted it somewhere public, or a computer was stolen): make a new key,
+put it in `agent/.env` on every host and run `sudo docker compose -f agent/compose.yaml up -d`
+there, then revoke the old key on the keys plate: press **✕** on its row twice. Computers still
+using the old key go dark at once. To be able to cut off one computer alone, give each
+computer its own key.
 
 **Update to a newer version of MARS:** on each computer,
 
@@ -454,11 +488,12 @@ when you start it again.
 - Change when lamps turn amber or red: press **E**, then the **Stations** key, then the **✎**
   key next to **FLEET-01**, and change its *Thresholds*. The example starts with: wait warn 1 ms / critical 3 ms, memory stalls 2 % /
   10 %, fullness 80 % / 92 %.
-- Several fleets (for example *web* and *database* computers): start the agent with another
-  name, `sudo MARS_STATION=db docker compose -f agent/compose.yaml up -d --build`, list those
-  hosts in their own file (`deploy/site/targets/db.yml`), and add the station `db` in the
-  service panel (**E** → **Stations**).
+- Several fleets (for example *web* and *database* computers): make a second key with the
+  station `db` (step 5), use it in `agent/.env` on the database computers, and add the station
+  `db` in the service panel (**E** → **Stations**, where it is listed under *Available* once
+  its computers send).
 - A Raspberry Pi as a wall display that starts by itself: [deploy/KIOSK.md](../deploy/KIOSK.md).
 - Password protection for the display: [deploy/README.md](../deploy/README.md#security).
 - How the agent measures, in detail: [agent/README.md](../agent/README.md) and
-  [ADR-0009](adr/0009-linux-hosts.md).
+  [ADR-0009](adr/0009-linux-hosts.md). How keys and pushing work:
+  [gateway/README.md](../gateway/README.md) and [ADR-0010](adr/0010-push-gateway.md).

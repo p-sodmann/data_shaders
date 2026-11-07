@@ -72,10 +72,17 @@ groups:
       # hour after the target dies, so a dead node reads 0 instead of vanishing. mars_info is
       # the many side: after a restart with a new version (or station) there are briefly two
       # info series per instance, which would make a group_left onto `up` fail.
+      # Pushed nodes (ADR-0010) have no `up` of their own: mars-gateway says whether each client
+      # still pushes (mars_push_up, kept for an hour like mars_info), and the gateway's own `up`
+      # (one target per job, hence `max by (job)`) turns them all 0 when the gateway is down.
       - record: mars:node_up
         expr: |
           max by (station, instance) (
             last_over_time(mars_info[1h]) * on (job, instance) group_left up
+          )
+          or
+          max by (station, instance) (
+            last_over_time(mars_push_up[1h]) * on (job) group_left max by (job) (up)
           )
 
       - record: mars:node_load_ratio

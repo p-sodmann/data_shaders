@@ -1,7 +1,8 @@
 # MARS stack (ADR-0004).
-#   docker compose -f deploy/compose.yaml up -d                     # MARS + Prometheus
+#   docker compose -f deploy/compose.yaml up -d                     # MARS + gateway + Prometheus
 #   docker compose -f deploy/compose.yaml --profile demo up -d      # + demo stations, loadgen
 # MARS: http://localhost:8080 · Prometheus: http://localhost:9090 (this machine only)
+# The demo stations push to MARS (ADR-0010) with keys from MARS_PUSH_KEYS below.
 name: mars
 
 # One image for both demo stations and the loadgen. Each service carries the same build so any
@@ -16,6 +17,8 @@ x-demo: &demo
 
 x-demo-station: &demo-station
   <<: *demo
+  depends_on:
+    - mars
   healthcheck:
     # The image has no curl. /healthz isn't timed by the probe, so this adds no series.
     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
@@ -39,8 +42,29 @@ services:
       - ./config:/config:ro
     depends_on:
       - prometheus
+      - mars-gateway
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Takes pushes from mars-agent and mars-probe (ADR-0010); Caddy forwards /push and /api/keys.
+  mars-gateway:
+    build: ../gateway
+    image: mars-gateway:local
+    environment:
+      # Keys for the demo clients, one per station. Keys made on the display (E → Keys) are
+      # kept in the gateway-data volume.
+      MARS_PUSH_KEYS: api:demo-api-key search:demo-search-key fleet:demo-fleet-key
+    ports:
+      # For `npm run dev`, which proxies /api/keys and /push to localhost:9111.
+      - "127.0.0.1:9111:9111"
+    volumes:
+      - gateway-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9111/healthz"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -75,11 +99,17 @@ services:
     <<: *demo-station
     environment:
       MARS_STATION: api
+      MARS_PUSH_URL: http://mars:8080
+      MARS_PUSH_KEY: demo-api-key
+      MARS_INSTANCE: demo-api
 
   demo-search:
     <<: *demo-station
     environment:
       MARS_STATION: search
+      MARS_PUSH_URL: http://mars:8080
+      MARS_PUSH_KEY: demo-search-key
+      MARS_INSTANCE: demo-search
       # A slower station, so the two read differently on the display.
       DEMO_LATENCY_SCALE: "1.6"
 
@@ -90,9 +120,13 @@ services:
     build: ../agent
     image: mars-agent:local
     environment:
-      MARS_STATION: fleet
+      MARS_PUSH_URL: http://mars:8080
+      MARS_PUSH_KEY: demo-fleet-key
+      MARS_INSTANCE: demo-host
+    depends_on:
+      - mars
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9110/healthz"]
+      test: ["CMD", "python", "-m", "mars_agent", "--healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -113,3 +147,4 @@ services:
 
 volumes:
   prometheus-data:
+  gateway-data:

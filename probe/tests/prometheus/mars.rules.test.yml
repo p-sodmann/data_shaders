@@ -274,6 +274,56 @@ tests:
           - labels: 'mars:node_up{station="api", instance="api-2:8000"}'
             value: 1
 
+  # ── pushed nodes (ADR-0010): liveness from mars-gateway, not from `up` ─────────────────────
+  # web-1 stops pushing at 10 s: the gateway drops its series and reports mars_push_up 0. web-2
+  # keeps pushing until the gateway itself dies at 20 s; mars_push_up goes stale with it, and
+  # the gateway's `up` turns every pushed node 0. A pulled node (api) next to them is unaffected.
+  - name: pushed nodes
+    interval: 1s
+    input_series:
+      - series: 'up{job="mars-push", instance="mars-gateway:9111"}'
+        values: '1x20 0x10'
+      - series: 'mars_push_up{job="mars-push", instance="web-1", station="web"}'
+        values: '1x10 0x10 stale'
+      - series: 'mars_info{job="mars-push", instance="web-1", station="web", version="0.1.0"}'
+        values: '1x10 stale'
+      - series: 'mars_push_up{job="mars-push", instance="web-2", station="web"}'
+        values: '1x20 stale'
+      - series: 'mars_info{job="mars-push", instance="web-2", station="web", version="0.1.0"}'
+        values: '1x20 stale'
+      - series: 'up{job="mars", instance="api:8000"}'
+        values: '1x30'
+      - series: 'mars_info{job="mars", instance="api:8000", station="api", version="0.1.0"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: mars:node_up
+        eval_time: 5s
+        exp_samples:
+          - labels: 'mars:node_up{station="web", instance="web-1"}'
+            value: 1
+          - labels: 'mars:node_up{station="web", instance="web-2"}'
+            value: 1
+          - labels: 'mars:node_up{station="api", instance="api:8000"}'
+            value: 1
+      - expr: mars:node_up
+        eval_time: 15s
+        exp_samples:
+          - labels: 'mars:node_up{station="web", instance="web-1"}'
+            value: 0
+          - labels: 'mars:node_up{station="web", instance="web-2"}'
+            value: 1
+          - labels: 'mars:node_up{station="api", instance="api:8000"}'
+            value: 1
+      - expr: mars:node_up
+        eval_time: 25s
+        exp_samples:
+          - labels: 'mars:node_up{station="web", instance="web-1"}'
+            value: 0
+          - labels: 'mars:node_up{station="web", instance="web-2"}'
+            value: 0
+          - labels: 'mars:node_up{station="api", instance="api:8000"}'
+            value: 1
+
   # ── saturation with and without an in-flight limit ──────────────────────────────────────
   # sat-limit: in-flight 48/64 = 0.75 beats CPU 0.25.
   # sat-nolimit: limit 0 (unset), so only CPU 0.25 counts even with 48 in flight.
