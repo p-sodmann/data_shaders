@@ -1,6 +1,6 @@
 # ADR-0005: Stations and layout live in one config document
 
-Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides) · amended 2026-11-07 (step 08b: saved copies of `?config=` documents, auto SLO floor, no page cap; step 09: `stages` before the probe's order, thresholds retune a running station, cartridge files)
+Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides) · amended 2026-11-07 (step 08b: saved copies of `?config=` documents, auto SLO floor, no page cap; step 09: `stages` before the probe's order, thresholds retune a running station, cartridge files; example layouts on the Layouts plate)
 
 ## Context
 
@@ -73,6 +73,11 @@ One JSON document (a "cartridge") describes the device. It is validated with **z
   they are not saved to localStorage unless the user saves them. *Save as local* on a
   `?config=` document writes it to `mars.config@<url>`, so the copy wins on this display for
   that link only, and *Revert to URL* deletes it. The legacy parameters get no saved copy.
+- *(Example layouts, 2026-11-07.)* The Layouts plate lists `public/examples/index.json` and the
+  built-in document. Loading one is an ordinary, undoable replacement of the document, saved
+  to `localStorage["mars.config"]`. On a display showing a URL document it writes
+  `mars.config` directly and navigates to the same address without `config` and the legacy
+  parameters, so the load order then finds the display's own copy.
 - Every saved document has `version`. Loaders migrate older versions forward with explicit
   functions in `web/src/config/migrations.js`. A document without `version` is v0: the
   pre-document device, one station described by the legacy fields above.

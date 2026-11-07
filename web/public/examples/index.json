@@ -1,0 +1,19 @@
+{
+  "examples": [
+    {
+      "file": "two-stations.json",
+      "title": "Two stations",
+      "description": "Two simulated services: the standard pages for one, a twin page for both"
+    },
+    {
+      "file": "sixteen-stations.json",
+      "title": "Sixteen stations",
+      "description": "The Fleet page on 16 simulated stations: board, radar, strands, shared log"
+    },
+    {
+      "file": "linux-fleet.json",
+      "title": "Linux fleet",
+      "description": "Station fleet from Prometheus: hosts running mars-agent, on four pages"
+    }
+  ]
+}

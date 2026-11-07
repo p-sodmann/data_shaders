@@ -135,6 +135,18 @@ says *URL cartridge · local copy wins* and the header's Station plate *· local
 to URL** (press twice) deletes the copy and its history and reloads the link's own document.
 A document from the legacy parameters becomes the display's own document when saved.
 
+### Layouts
+
+The **Layouts** key opens the example layouts: the documents listed in
+[public/examples/index.json](public/examples/index.json) and the built-in one, each with its
+station and page counts. **Load** (two presses) replaces the stations and pages and makes the
+example this display's own document (`localStorage["mars.config"]`), so it is still there after
+a reload; Undo brings back the layout it replaced. On a display opened with `?config=` (or the
+old station parameters) the example is saved the same way and the display leaves the link
+(other parameters such as `?finish=` stay), since a reload would otherwise show the link's
+document again. To add an example, put its document in `public/examples/` and list it in
+`index.json` (`file`, `title`, `description`).
+
 ### Stations and cartridges
 
 The **Stations** key on the panel opens the stations plate in a wider service column (the deck
@@ -189,7 +201,8 @@ schema in [src/config/schema.js](src/config/schema.js)). The first of these wins
 5. the built-in default: one simulated station `main` with the five standard pages
 
 A document that doesn't validate is skipped with a `[MARS] config …` warning in the console.
-Documents from the URL (1, 2) are never saved over this display's copy.
+Documents from the URL (1, 2) are never saved over this display's copy, except by loading a
+layout on the Layouts plate, which also leaves the link.
 
 Several stations run side by side. With more than one, module headers carry the station name,
 the alarm lamp and the System tube show the worst station, and an event log bound to

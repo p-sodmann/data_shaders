@@ -22,6 +22,10 @@ if the prod compose tag or this file don't follow it. The format follows
 - `mars-agent` pushes when `MARS_PUSH_URL` and `MARS_PUSH_KEY` are set (no open port then), and
   has `--healthcheck`. `mars-probe` pushes OpenMetrics from a thread with
   `instrument(…, push_url=…, push_key=…)` or the same variables.
+- **Layouts plate** (`E` → **Layouts**): load one of the example layouts
+  ([web/public/examples/index.json](web/public/examples/index.json)) or the built-in one as this
+  display's own document, kept across reloads and undoable. From a `?config=` link it saves the
+  example locally and leaves the link.
 - `mars:node_up` covers pushed nodes through `mars_push_up` (**metric contract change**,
   ADR-0003's rule amended; pulled nodes unchanged).
 

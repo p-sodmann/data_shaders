@@ -18,6 +18,7 @@ import { Key } from '../device.jsx';
 import { moduleNumber } from '../PageView.jsx';
 import { EditableDeck } from './EditableDeck.jsx';
 import { KeysPlate } from './KeysPlate.jsx';
+import { LayoutsPlate } from './LayoutsPlate.jsx';
 import { ModuleBay } from './ModuleBay.jsx';
 import { SettingsPlate } from './SettingsPlate.jsx';
 import { StationsPlate } from './StationsPlate.jsx';
@@ -28,7 +29,8 @@ import { StationLamp } from './controls.jsx';
 // the standard-pages chooser) and the module bay. The STATIONS key swaps the
 // plate and the bay for the stations plate (step 09), and widens the column
 // for its table; the deck stays in view, so threshold changes show as they
-// are made. The KEYS key does the same for the push keys plate (ADR-0010).
+// are made. The KEYS key does the same for the push keys plate (ADR-0010),
+// and the LAYOUTS key for the example layouts.
 //
 // edit(fn) applies a document edit and returns false (showing why on the
 // panel) when the store refuses it; onNotice(text) shows a refusal that
@@ -58,7 +60,7 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
     else onNotice('local copy not removed');
   };
   const [swapping, setSwapping] = useState(false);
-  // the keys plate; the stations plate wins while it is open too
+  // the keys or layouts plate; the stations plate wins while it is open too
   const [sideWanted, setSide] = useState(null);
   const side = stationsOpen ? null : sideWanted;
   const toggleSide = (name) => {
@@ -172,6 +174,9 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
             <Key k="K" active={side === 'keys'} onClick={() => toggleSide('keys')} className="keys-key">
               Keys
             </Key>
+            <Key k="▤" active={side === 'layouts'} onClick={() => toggleSide('layouts')} className="layouts-key">
+              Layouts
+            </Key>
           </div>
           {notice && <div className="notice">{notice}</div>}
         </section>
@@ -180,6 +185,8 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
           <StationsPlate doc={doc} stations={stations} edit={edit} onPage={onPage} cartridge={cartridge} onCartridge={onCartridge} />
         ) : side === 'keys' ? (
           <KeysPlate doc={doc} />
+        ) : side === 'layouts' ? (
+          <LayoutsPlate meta={meta} edit={edit} onPage={onPage} onNotice={onNotice} />
         ) : stdOpen ? (
           <section className="settings">
             <header className="plate-head">
