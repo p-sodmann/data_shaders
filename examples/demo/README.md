@@ -30,9 +30,12 @@ status counts every 10 s, plus every batch job and incident it fires.
 | `GET /healthz` | none. Not timed. |
 
 The handlers sleep through their stages with log-normal latencies (`/v1/predict` has a P50 of
-about 18 ms) and burn a little CPU in `infer`, so the node load moves with traffic. The
-`X-Demo-Region` request header comes back unchanged on the response (step 11 resolves regions
-from it). Until then the probe records every request with `region="unknown"`.
+about 18 ms) and burn a little CPU in `infer`, so the node load moves with traffic. The app
+trusts two request headers, standing in for a proxy at the edge:
+`RegionConfig(header="X-Demo-Region", rtt_header="X-Demo-RTT", country_headers=())`. So
+`X-Demo-Region: NRT` puts the request in region `NRT` (a code outside the probe's table counts
+as `unknown`), and `X-Demo-RTT` (µs) feeds `mars_client_rtt_seconds`. `X-Demo-Region` comes
+back unchanged on the response.
 
 | Variable | Default | |
 |---|---|---|
@@ -79,10 +82,20 @@ instead of lowering throughput. Durations take seconds or a `30s` / `10m` / `2h`
 | `LOADGEN_BATCH_EVERY` | `5m` | a batch job of `/v1/rank` on the wall-clock mark. `0` turns it off. |
 | `LOADGEN_BATCH_SIZE` | `300` | requests per target per batch, spread over 10 s |
 | `LOADGEN_INCIDENT_EVERY` | `45m` | mean time between random incidents on a random target. `0` turns them off. |
+| `LOADGEN_HOME` | `50.1,8.7` | `lat,lon` of the stations, for the client RTT. The default is the display's default station `home` (Frankfurt); set both together. |
+| `LOADGEN_DEGRADE_EVERY` | `15m` | mean time between degraded routes. `0` turns them off. |
 | `LOADGEN_SEED` | random | makes the traffic and the incidents reproducible |
 
 The route mix (predict 50 %, embed 20 %, rank 12 %, items 10 %, models 8 %) and the region
-shares follow the simulator in `web/src/config.js`.
+shares follow the simulator in `web/src/config.js`. Like the simulator, each region's share is
+scaled by its local daylight over the (possibly compressed) day, so the centre of traffic on
+the display's ground track drifts west.
+
+Each request carries `X-Demo-Region` and `X-Demo-RTT`: 3 ms plus 1 ms per 95 km between the
+region and `LOADGEN_HOME` (the simulator's model; about 10 ms from London, 70 ms from Virginia,
+175 ms from Sydney), with 8 % log-normal jitter. Now and then one region's route degrades to
+×1.6 or ×2.5 of its RTT for 2–7 minutes, which the display shows as `ROUTE … DEGRADED` or
+`LOST`. The loadgen prints each one.
 
 ## Docker
 

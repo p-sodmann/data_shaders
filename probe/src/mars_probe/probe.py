@@ -13,7 +13,7 @@ from .collectors import CpuCollector
 from .exemplars import TokenBucket
 from .exposition import MetricsApp
 from .middleware import MarsMiddleware
-from .regions import resolve_region
+from .regions import RegionConfig, RegionResolver, no_region
 
 STATION_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
@@ -23,6 +23,9 @@ BUCKETS = (
     0.001, 0.0025, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04,
     0.05, 0.075, 0.1, 0.15, 0.25, 0.5, 1, 2.5, 5, 10,
 )  # fmt: skip
+# Client RTT (step 11). The rules only read its mean, so these are for people reading the raw
+# histogram: LAN, same metro, same continent, across an ocean, across the planet.
+RTT_BUCKETS = (0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1)
 
 
 class Probe:
@@ -37,6 +40,7 @@ class Probe:
         exclude_paths: Iterable[str] = ("/metrics",),
         metrics_path: str | None = "/metrics",
         stages: Iterable[str] = (),
+        regions: RegionConfig | None = None,
     ):
         if not STATION_RE.match(station):
             raise ValueError(f"station {station!r} must match {STATION_RE.pattern}")
@@ -44,8 +48,9 @@ class Probe:
         self.metrics_path = metrics_path
         self.exclude_paths = frozenset(exclude_paths)
         self.exemplars = TokenBucket(exemplar_rate)
-        # Replaced in step 11 (GeoIP / trusted proxy header).
-        self.resolve_region = resolve_region
+        # scope → (region, client RTT seconds or None). Without a config every request is
+        # "unknown", as before step 11.
+        self.resolve_region = RegionResolver(regions) if regions is not None else no_region
 
         # A registry of our own: tests stay isolated, several probes can live in one process,
         # and the default process_* / python_* collectors don't leak into the MARS series.
@@ -84,6 +89,17 @@ class Probe:
         self._stage_order: dict[str, int] = {}
         for name in stages:
             self.see_stage(name)
+        # Only with an RTT header: an always-empty histogram would just be noise on /metrics.
+        self._rtt = None
+        if regions is not None and regions.rtt_header:
+            self._rtt = Histogram(
+                "mars_client_rtt_seconds",
+                "Client TCP round-trip time, from a trusted proxy header",
+                s + ["region"],
+                buckets=RTT_BUCKETS,
+                registry=r,
+            )
+        self._rtt_children: dict[str, Histogram] = {}
         self._signal = Gauge("mars_signal", "Custom signals", s + ["signal"], registry=r)
         r.register(CpuCollector(station))
 
@@ -105,6 +121,12 @@ class Probe:
             child.observe(seconds, {"status": str(status)})
         else:
             child.observe(seconds)
+
+    def observe_rtt(self, region: str, seconds: float) -> None:
+        child = self._rtt_children.get(region)
+        if child is None:
+            child = self._rtt_children[region] = self._rtt.labels(self.station, region)
+        child.observe(seconds)
 
     def observe_stage(self, name: str, seconds: float) -> None:
         child = self._stage_children.get(name)
@@ -138,11 +160,15 @@ def instrument(
     exemplar_rate: float = 1.0,
     exclude_paths: Iterable[str] = ("/metrics",),
     stages: Iterable[str] = (),
+    regions: RegionConfig | None = None,
 ) -> Probe:
     """Instrument a FastAPI/Starlette app and (unless `metrics_path` is None) serve /metrics.
 
     `stages` is the pipeline order of the app's `stage()` names, exported as `mars_stage_info`.
     Stages not listed follow in the order the process first sees them.
+
+    `regions` turns on the `region` label (and with `rtt_header`, mars_client_rtt_seconds);
+    without it every request is region "unknown". See `RegionConfig`.
 
     Must be called before the app starts serving, like any `add_middleware`.
     """
@@ -153,6 +179,7 @@ def instrument(
         exclude_paths=exclude_paths,
         metrics_path=metrics_path,
         stages=stages,
+        regions=regions,
     )
     app.add_middleware(MarsMiddleware, probe=probe)
     # Stages outside any request go to the most recently instrumented app.

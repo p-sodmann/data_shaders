@@ -68,9 +68,10 @@ class MarsMiddleware:
             # The routers have written into scope by now (it's the same dict all the way down).
             route = self.routes.resolve(root_app, scope)
             method = scope["method"].upper()
-            probe.observe_request(
-                route, method, cls, probe.resolve_region(scope), elapsed, status or 500
-            )
+            region, rtt = probe.resolve_region(scope)
+            probe.observe_request(route, method, cls, region, elapsed, status or 500)
+            if rtt is not None:
+                probe.observe_rtt(region, rtt)
 
         async def send_wrapper(message):
             nonlocal status

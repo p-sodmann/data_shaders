@@ -10,6 +10,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# GeoIP region lookup: RegionConfig(geoip="GeoLite2-Country.mmdb").
+geo = ["geoip2>=4.8"]
 dev = [
     "fastapi",
     # starlette.testclient uses httpx2 from 1.10 on (plain httpx is deprecated there). The

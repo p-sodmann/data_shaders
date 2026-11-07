@@ -145,7 +145,8 @@ groups:
             ) > 0
           )
 
-      # mars_client_rtt_seconds arrives in step 11; until then this rule records nothing.
+      # mars_client_rtt_seconds exists only with RegionConfig(rtt_header=...); without it this
+      # rule records nothing, and the display shows regions without RTT.
       - record: mars:region_rtt_ms
         expr: |
           sum by (station, region) (rate(mars_client_rtt_seconds_sum{region!="unknown"}[10s]))

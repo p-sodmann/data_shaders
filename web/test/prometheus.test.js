@@ -385,6 +385,36 @@ describe('prometheus station', () => {
     expect(station.store.overflow).toBe(false);
   });
 
+  it('fills the ground track from live regions, towards the home of the doc', async () => {
+    // As the step 11 probe reports them: discovered IAD and NRT, LHR showing up later.
+    const labels = prom.fetch.getMockImplementation();
+    prom.fetch.mockImplementation((url) => (params(url).path === 'label/region/values' ? ok(success(['IAD', 'NRT'])) : labels(url)));
+    const rg = (code, rps, rtt) => ['region_rps', rps, 'region_rtt_ms', rtt, 'region_error_ratio', 0]
+      .reduce((out, v, i, a) => (i % 2 ? out : [...out, { metric: { __name__: `mars:${v}`, region: code, station: 'api' }, value: [0, String(a[i + 1])] }]), []);
+    const base = fx('live.json').data.result;
+    const live = (...regions) => (prom.live = success({ resultType: 'vector', result: [...base, ...regions.flat()] }));
+
+    live(rg('IAD', 30, 70), rg('NRT', 2, 230));
+    await boot({ home: { lat: 38.9, lon: -77.4 } });
+    expect(station.profile.home).toEqual({ lat: 38.9, lon: -77.4 });
+    expect(store().regions.map((r) => r.code)).toEqual(['IAD', 'NRT']);
+    await vi.advanceTimersByTimeAsync(3100);
+    const [iad, nrt] = store().regions;
+    expect(iad).toMatchObject({ live: true, name: 'US EAST' });
+    expect(iad.rtt).toBeCloseTo(70, 0);
+    expect(nrt.rtt).toBeCloseTo(230, 0);
+    const east = store().centroid;
+    expect(east[1]).toBeLessThan(-30); // most traffic from IAD
+
+    // the mix turns towards Asia: the centre follows, and a new region gets a slot
+    live(rg('IAD', 2, 70), rg('NRT', 30, 230), rg('LHR', 5, 80));
+    await vi.advanceTimersByTimeAsync(31000); // one TRACK_STEP: a point on the trail
+    expect(store().regions.map((r) => r.code)).toEqual(['IAD', 'NRT', 'LHR']);
+    expect(store().regions[2]).toMatchObject({ live: true, name: 'UK' });
+    expect(store().centroid[1]).toBeGreaterThan(east[1] + 60);
+    expect(store().trackPoints().length).toBeGreaterThan(0);
+  });
+
   const store = () => station.store;
 });
 

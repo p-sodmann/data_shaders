@@ -15,7 +15,7 @@ import random
 from time import perf_counter
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from mars_probe import instrument, stage
+from mars_probe import RegionConfig, instrument, stage
 
 from .chaos import Chaos, ChaosRequest
 
@@ -73,7 +73,8 @@ def create_app(
     chaos = Chaos()
 
     def echo_region(request: Request, response: Response) -> str | None:
-        # Passed through unchanged; step 11 resolves regions from it.
+        # Echoed so a client can see which region it was counted in. The probe reads the same
+        # header itself (RegionConfig below).
         region = request.headers.get("x-demo-region")
         if region is not None:
             response.headers["X-Demo-Region"] = region
@@ -90,6 +91,9 @@ def create_app(
         exclude_paths=("/metrics", "/_chaos", "/healthz"),
         # first-seen order would put rank after egress whenever /v1/predict comes first
         stages=list(STAGE_LATENCY),
+        # The loadgen plays the trusted edge: it says where each client is and its RTT (µs, like
+        # nginx's $tcpinfo_rtt). No country headers: nothing in the demo sets them.
+        regions=RegionConfig(header="X-Demo-Region", rtt_header="X-Demo-RTT", country_headers=()),
     )
     app.state.probe = probe
     # Read at scrape time, so it drops to 0 the moment an incident expires.

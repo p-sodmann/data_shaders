@@ -229,7 +229,9 @@ When a Prometheus station starts ([src/data/prometheus/](src/data/prometheus/)):
 1. **Discovery.** Nodes come from `mars:node_up` (last 1 h), and routes, stages and regions from
    the label values of `mars:endpoint_rps`, `mars:stage_mean_ms` and `mars:region_rps` (last 4 h).
    Region codes are joined against [src/data/regions.js](src/data/regions.js) (IATA-style
-   codes). Unknown codes are skipped, with one console warning.
+   codes). Unknown codes are skipped, with one console warning. The table is the probe's
+   ([probe/src/mars_probe/regions.json](../probe/src/mars_probe/regions.json)), copied to
+   `src/data/regions.json`; `npm test` fails while the copies differ.
 2. **Tape load.** Its screens show TAPE LOAD while the station-level series are fetched for the
    whole 4 h tape (`query_range`, 1 s steps, 1 h chunks, at most 4 at once). Per-node series
    are fetched only for the last 10 min (what Fleet and Slices show). Routes, stages and regions

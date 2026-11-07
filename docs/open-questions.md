@@ -37,6 +37,19 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   while `log` keeps its `*` binding (the Twin page uses it). Keep both, or migrate `log` + `*`
   to `stationLog` and drop scope `either`?
 
+## Probe
+
+- **Country headers are trusted by default (step 11).** `RegionConfig()` reads `CF-IPCountry`
+  and `CloudFront-Viewer-Country` unless `country_headers=()`, as the step's resolution order
+  lists them. Without one of those CDNs in front, a client can choose its own region by sending
+  the header. The damage is bounded (wrong region, never a new label value), but an opt-in
+  default would be safer for apps that aren't behind a CDN. Keep it, or default to `()`?
+- **Country → region uses the capital (step 11).** Each country maps to the region nearest its
+  capital (`probe/scripts/gen_regions.py`). Large countries land on an odd region: RU → KBP,
+  KZ → DEL, CA → YUL, CN → PEK for the whole country. GeoIP gives only the country too, so
+  there is nothing finer to use without city data (out of scope). Hand-tune a few entries, or
+  add regions (MOW, ALA)?
+
 ## Deploy
 
 - **Images can't be built in the Podman VM here (steps 07–09).** `npm ci` fails in the

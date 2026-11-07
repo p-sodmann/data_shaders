@@ -1,6 +1,6 @@
 # ADR-0003: Metric and recording-rule contract
 
-Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b) · amended 2026-11-07 in step 09 (a station's `stages` override goes before `mars_stage_info`; "first saw" means first entered)
+Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b) · amended 2026-11-07 in step 09 (a station's `stages` override goes before `mars_stage_info`; "first saw" means first entered) · amended 2026-11-07 in step 11 (region table and resolution, RTT buckets, `unknown` left out of all three region rules)
 
 This is the interface between `mars-probe` (step 01), the Prometheus rules (step 03) and the
 MARS Prometheus source (step 07). Change it only by editing this ADR in the same commit.
@@ -24,7 +24,7 @@ MARS Prometheus source (step 07). Change it only by editing this ADR in the same
 | `mars_process_cpu_seconds_total` | counter | `station` | `time.process_time()` of the process. |
 | `mars_stage_duration_seconds` | histogram | `station`, `stage` | Time spent inside `with stage("name")`. |
 | `mars_stage_info` | gauge (=1) | `station`, `stage`, `order` | Pipeline position of a stage (`order` = 0, 1, …), from `instrument(app, stages=[…])`, then the order in which the process first entered each other stage. Listed stages are exported from the start, before any request. Several instances may disagree; the display takes a stage's lowest `order`. *(Step 09.)* |
-| `mars_client_rtt_seconds` | histogram | `station`, `region` | Optional (step 11). Client RTT taken from a trusted proxy header. |
+| `mars_client_rtt_seconds` | histogram | `station`, `region` | Optional, only with `RegionConfig(rtt_header=…)`. Client RTT taken from a trusted proxy header. *(Step 11.)* |
 | `mars_signal` | gauge | `station`, `signal` | Optional custom signals (`probe.gauge("queue_depth")`). |
 
 Label rules:
@@ -32,12 +32,19 @@ Label rules:
   requests get `route="<unmatched>"`.
 - `code_class` is one of `2xx`, `3xx`, `4xx`, `5xx`. An unhandled exception counts as `5xx`.
   **Only `5xx` counts as an error.**
-- `region` is a region code such as `FRA`, or `unknown` (until step 11 it is always `unknown`).
+- `region` is a code from the region table, or `unknown`. The table is
+  `probe/src/mars_probe/regions.json` (about 80 IATA-style codes, plus an ISO country → region
+  map); the display's `web/src/data/regions.json` is a verbatim copy, and tests in both
+  packages fail while they differ. The probe never emits a code outside the table, so the label
+  has at most len(table) + 1 values. Without a `RegionConfig` every request is `unknown`.
+  Resolution order: trusted region header, country header, GeoIP, `unknown`. *(Step 11.)*
 - `method` is upper case.
 
 Latency buckets (seconds):
 `0.001, 0.0025, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.075, 0.1, 0.15, 0.25, 0.5, 1, 2.5, 5, 10`.
 Stage buckets: the same.
+Client RTT buckets (seconds): `0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.5, 1`.
+The rules read only the mean, so these are for people looking at the raw histogram. *(Step 11.)*
 
 Exemplars: on `mars_http_request_duration_seconds`, about 1 request per second per node,
 with exemplar labels `{status: "<http status>"}` (route and node come from the series labels).
@@ -63,8 +70,8 @@ smoothing on top. Units are already the ones MARS displays.
 | `mars:endpoint_error_ratio` | station, route | per-route 5xx ratio |
 | `mars:stage_mean_ms` | station, stage | `rate(sum) ÷ rate(count) * 1000` |
 | `mars:region_rps` | station, region | per-region throughput (excluding `unknown`) |
-| `mars:region_error_ratio` | station, region | per-region 5xx ratio |
-| `mars:region_rtt_ms` | station, region | mean of `mars_client_rtt_seconds` (step 11) |
+| `mars:region_error_ratio` | station, region | per-region 5xx ratio (excluding `unknown`) |
+| `mars:region_rtt_ms` | station, region | mean of `mars_client_rtt_seconds` (excluding `unknown`). Absent without an RTT header. |
 
 The rules file lives in **one place**:
 `probe/src/mars_probe/prometheus/mars.rules.yml`. It is shipped inside the package, printed

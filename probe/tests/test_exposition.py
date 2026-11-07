@@ -9,7 +9,7 @@ from prometheus_client.parser import text_string_to_metric_families as parse_tex
 
 from mars_probe import __version__
 
-# ADR-0003 raw metrics. mars_client_rtt_seconds is optional and arrives with step 11.
+# ADR-0003 raw metrics. mars_client_rtt_seconds is optional (RegionConfig.rtt_header).
 EXPECTED = {
     "mars_info": {"station", "version"},
     "mars_http_request_duration_seconds": {"station", "route", "method", "code_class", "region"},
@@ -101,3 +101,15 @@ def test_cli_version():
     )
     assert out.returncode == 0
     assert out.stdout.strip() == __version__
+
+
+def test_rtt_histogram_only_with_rtt_header():
+    from mars_probe import RegionConfig
+
+    app, _ = build_app("expo", regions=RegionConfig(header="X-Region", rtt_header="X-RTT"))
+    with TestClient(app) as c:
+        c.get("/items/1", headers={"X-Region": "FRA", "X-RTT": "12000"})
+        text = c.get("/metrics").text
+    fams = families(parse_text(text))
+    assert fams["mars_client_rtt_seconds"] == {"station", "region"}
+    assert 'mars_client_rtt_seconds_bucket{le="0.02",region="FRA",station="expo"} 1.0' in text

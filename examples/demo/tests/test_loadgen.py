@@ -1,3 +1,4 @@
+import math
 import random
 
 import pytest
@@ -6,11 +7,14 @@ from demo.app import ROUTE_STAGES
 from demo.chaos import ChaosRequest
 from demo.loadgen import (
     INCIDENT_STAGES,
+    REGION_CODES,
     Config,
+    Routes,
     daily_factor,
     parse_duration,
     pick_request,
     random_incident,
+    region_weights,
 )
 
 
@@ -34,6 +38,10 @@ def test_config_from_env():
     assert cfg.incident_every == 600
     assert cfg.batch_every == 300
     assert Config.from_env({}).day_seconds == 86_400
+    assert Config.from_env({}).home == (50.1, 8.7)
+    assert Config.from_env({"LOADGEN_HOME": "38.9, -77.4"}).home == (38.9, -77.4)
+    with pytest.raises(ValueError):
+        Config.from_env({"LOADGEN_HOME": "8.7,250"})
 
 
 def test_daily_factor_swings_once_per_day():
@@ -66,3 +74,53 @@ def test_incidents_are_valid_chaos_requests():
         if req.stage:
             assert req.stage in INCIDENT_STAGES
             assert any(req.stage in dict(s) for s in ROUTE_STAGES.values())
+
+
+def test_rtt_grows_with_distance_from_home():
+    routes = Routes((50.1, 8.7))  # Frankfurt
+    rng = random.Random(1)
+
+    def median_ms(code):
+        values = sorted(routes.rtt_us(code, 0, rng) for _ in range(501))
+        return values[250] / 1000
+
+    assert median_ms("LHR") == pytest.approx(10, abs=2)
+    assert median_ms("IAD") == pytest.approx(70, abs=6)
+    assert median_ms("SYD") > 160
+    assert median_ms("LHR") < median_ms("IAD") < median_ms("NRT") < median_ms("SYD")
+
+
+def test_degraded_route_multiplies_rtt_until_it_ends():
+    routes = Routes((50.1, 8.7))
+    rng = random.Random(2)
+    normal = routes.rtt_us("NRT", 100, rng)
+    routes.degrade("NRT", 100, 60, 2.5)
+    assert routes.rtt_us("NRT", 130, rng) == pytest.approx(normal * 2.5, rel=0.4)
+    assert routes.rtt_us("NRT", 161, rng) == pytest.approx(normal, rel=0.4)
+    assert routes.rtt_us("LHR", 130, rng) < normal  # other routes untouched
+
+
+def test_region_mix_follows_local_daylight():
+    # The traffic centre is the display's ground track: the mix must move it through the day.
+    from mars_probe.regions import REGIONS
+
+    day = 600
+
+    def mean_lon(t):
+        w = region_weights(t, day)
+        lons = [math.radians(REGIONS[c][2]) for c in REGION_CODES]
+        x = sum(wi * math.cos(lon) for wi, lon in zip(w, lons, strict=True))
+        y = sum(wi * math.sin(lon) for wi, lon in zip(w, lons, strict=True))
+        return math.degrees(math.atan2(y, x))
+
+    # 15:00 UTC: afternoon in Europe and the Americas, the centre near 0°. 03:00 UTC: afternoon
+    # in Asia and evening in the Americas, the centre out over the Pacific.
+    noon, night = mean_lon(day * 15 / 24), mean_lon(day * 3 / 24)
+    assert abs(noon) < 30
+    assert abs((night - noon + 180) % 360 - 180) > 90
+    w = region_weights(day * 15 / 24, day)
+    assert w[REGION_CODES.index("IAD")] > w[REGION_CODES.index("NRT")] * 2
+    assert all(wi > 0 for wi in w)
+    rng = random.Random(5)
+    picks = [pick_request(rng, w)[2] for _ in range(3000)]
+    assert picks.count("IAD") > picks.count("NRT") * 2

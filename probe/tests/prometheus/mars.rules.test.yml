@@ -36,6 +36,15 @@ tests:
         values: '0+1x30'
       - series: 'mars_http_request_duration_seconds_count{job="mars", instance="api:8000", station="api", route="/v1/predict", method="POST", code_class="5xx", region="unknown"}'
         values: '0+1x30'
+      # Client RTT (step 11): 8 per second at 62.5 ms in FRA; the unknown region is left out.
+      - series: 'mars_client_rtt_seconds_sum{job="mars", instance="api:8000", station="api", region="FRA"}'
+        values: '0+0.5x30'
+      - series: 'mars_client_rtt_seconds_count{job="mars", instance="api:8000", station="api", region="FRA"}'
+        values: '0+8x30'
+      - series: 'mars_client_rtt_seconds_sum{job="mars", instance="api:8000", station="api", region="unknown"}'
+        values: '0+1x30'
+      - series: 'mars_client_rtt_seconds_count{job="mars", instance="api:8000", station="api", region="unknown"}'
+        values: '0+1x30'
       - series: 'mars_stage_duration_seconds_sum{job="mars", instance="api:8000", station="api", stage="infer"}'
         values: '0+0.25x30'
       - series: 'mars_stage_duration_seconds_count{job="mars", instance="api:8000", station="api", stage="infer"}'
@@ -127,10 +136,11 @@ tests:
         exp_samples:
           - labels: 'mars:region_error_ratio{station="api", region="FRA"}'
             value: 0
-      # No mars_client_rtt_seconds yet (step 11).
       - expr: mars:region_rtt_ms
         eval_time: 20s
-        exp_samples: []
+        exp_samples:
+          - labels: 'mars:region_rtt_ms{station="api", region="FRA"}'
+            value: 62.5
 
   # ── zero errors: traffic, but no 5xx series at all → 0, not absent ──────────────────────
   - name: zero errors

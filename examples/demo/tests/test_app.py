@@ -19,7 +19,7 @@ def client():
     return TestClient(create_app("search", latency_scale=0.01, cpu_ms=0, seed=1))
 
 
-def count(client, route, code_class):
+def count(client, route, code_class, region="unknown"):
     value = client.app.state.probe.registry.get_sample_value(
         "mars_http_request_duration_seconds_count",
         {
@@ -27,7 +27,7 @@ def count(client, route, code_class):
             "route": route,
             "method": "POST",
             "code_class": code_class,
-            "region": "unknown",
+            "region": region,
         },
     )
     return value or 0
@@ -75,6 +75,19 @@ def test_region_header_passes_through(client):
     assert "x-demo-region" not in client.post("/v1/predict").headers
 
 
+def test_region_and_rtt_from_the_demo_headers(client):
+    client.post("/v1/predict", headers={"X-Demo-Region": "nrt", "X-Demo-RTT": "230000"})
+    client.post("/v1/predict", headers={"X-Demo-Region": "atlantis", "X-Demo-RTT": "5000"})
+    # Not a demo header: the demo trusts no country header.
+    client.post("/v1/predict", headers={"CF-IPCountry": "DE"})
+    assert count(client, "/v1/predict", "2xx", region="NRT") == 1
+    assert count(client, "/v1/predict", "2xx") == 2
+    rtt = client.app.state.probe.registry.get_sample_value(
+        "mars_client_rtt_seconds_sum", {"station": "search", "region": "NRT"}
+    )
+    assert rtt == pytest.approx(0.23)
+
+
 def test_chaos_errors_raise_5xx_and_clear(client):
     r = client.post("/_chaos", json={"error_rate": 1, "duration_s": 60})
     assert r.json()["active"] is True
@@ -82,7 +95,7 @@ def test_chaos_errors_raise_5xx_and_clear(client):
         r = client.post("/v1/predict", headers={"X-Demo-Region": "FRA"})
         assert r.status_code == 500
         assert r.headers["x-demo-region"] == "FRA"
-    assert count(client, "/v1/predict", "5xx") == 5
+    assert count(client, "/v1/predict", "5xx", region="FRA") == 5
     assert client.delete("/_chaos").json() == {"active": False}
     assert client.post("/v1/predict").status_code == 200
 
