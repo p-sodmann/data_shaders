@@ -1,6 +1,6 @@
 # Step 10: Cross-station instruments
 
-Status: partial
+Status: done
 Depends on: 07 (08 recommended, so they can be placed from the bay)
 Read first: [ADR-0005](../adr/0005-config-document.md), `web/README.md` (instrument authoring)
 
@@ -38,7 +38,7 @@ existing shaders and vector painter, with no new rendering pipeline.
 
 - [x] With the demo stack, the Fleet page shows both stations. Chaos on one turns its lamp and
       contact amber or orange. Stopping one turns it dark (STALE).
-- [ ] With 16 sim stations (an example config), the frame time stays within 10 % of the
+- [x] With 16 sim stations (an example config), the frame time stays within 10 % of the
       2-station case. Report the numbers.
 - [x] Adding or removing a station in the stations plate updates these instruments live.
 - [x] vitest and smoke pass.
@@ -49,11 +49,12 @@ Per-station instrument changes.
 
 ## Handoff
 
-**Status `partial`:** one criterion is not met as measured here. With 16 stations the frame
-time is within 10 % of the 2-station case in CPU time, but not in frame interval under
-SwiftShader (software WebGL): it is +12 to +22 %. Between 5 and 16 stations it is flat
-(+3 to +6 %), so the cost is bounded; what remains is that 2 stations fill fewer label rows than
-the caps allow. Numbers below. It needs a run on a real GPU.
+**Status:** first handed off as `partial`, because the frame-time criterion failed under
+SwiftShader (software WebGL): the frame interval was +12 to +22 % at 16 stations. On
+2026-11-07 it was measured on a real GPU, where it passes (−1.0 %, no dropped frames; see
+*Frame time on a real GPU* below). By the user's decision, "frame time" means the frame interval
+(the rAF interval at which the engine draws), as in the original measurement. The criterion is
+ticked and the step is `done`.
 
 **Built**
 
@@ -186,6 +187,28 @@ The CPU time per frame is within noise, and below 16.7 ms in both cases. The fra
 under software rendering grows with the number of labels drawn, which stops growing at 5
 stations.
 
+**Frame time on a real GPU (2026-11-07, added before step 12).** Apple M4 Pro, Chromium
+(Playwright) with `--use-angle=metal`, headed, vsync on, document `fps` 60. Same set-up as above
+otherwise: Fleet page of `sixteen-stations.json` cut to 2, 5 and 16 stations, served through
+`page.route`, 1920 × 1080, dpr 1, 5 s warm-up, 6 readings of 3 s each. The frame interval is
+measured on the frames the engine actually draws (an init script timestamps each clear of the
+default framebuffer), not on bare rAF ticks, which the engine skips below `1000 / fps`.
+
+```
+                        2 stations     5 stations     16 stations    2 → 16
+frame interval          16.83 ms       16.67 ms       16.67 ms       −1.0 %
+frames > 1.5× target    2 of ~1080     0              0
+cpu (__mars.frames)     0.98 ms        1.00 ms        1.76 ms        +80 %
+```
+
+- Every case holds vsync. The two slow frames at 2 stations are warm-up noise.
+- On hardware the CPU time per frame does grow with stations (+80 %; under SwiftShader it was
+  hidden in the rasteriser's own ~10 ms). At 1.76 ms it is ~10 % of a 60 Hz frame.
+- An uncapped run (`?fps=240`, `--disable-gpu-vsync --disable-frame-rate-limit`) stays paced at
+  ~18 ms in headless Chromium, so it doesn't measure throughput and isn't reported.
+- Not measured: a Raspberry Pi 5 (the kiosk target in step 12). If it drops frames there, the
+  levers are still `NAMED` / `LISTED` and cheaper painter text.
+
 Screenshots (session scratchpad, not committed): `/private/tmp/claude-501/-Users-philippsodmann-Documents-python-2026-data-shaders/dd574dcc-b049-4070-b6eb-88d712ce8ecb/scratchpad/shots/`
 `16-fleet.png`, `16-fleet-2x.png`, `16-board-crop.png`, `10-live-fleet.png`,
 `10-live-chaos.png`, `10-live-stale.png`, `10-live-removed.png`, `10-live-added.png`,
@@ -193,12 +216,13 @@ Screenshots (session scratchpad, not committed): `/private/tmp/claude-501/-Users
 
 **Not verified / needs a person**
 
-- **The 10 % frame-time criterion on a real GPU.** On SwiftShader it fails 2 → 16 (above). On
-  hardware the extra ~2,000 beam instances should be negligible, but that is not measured. If
-  it still matters, the levers are `NAMED` / `LISTED` in the two instrument files (5 now), or
+- **Frame time on a Raspberry Pi 5 or another low-end GPU.** Passed on an M4 Pro (above). If it
+  matters there, the levers are `NAMED` / `LISTED` in the two instrument files (5 now), or
   cheaper painter text (a shared concern, outside this step).
 - **The `mars-web` image wasn't rebuilt** (the Podman `npm ci` problem from steps 07–09). The
-  live run used the dev server against the stack's Prometheus.
+  live run used the dev server against the stack's Prometheus. *Settled 2026-11-07:* after a
+  Podman machine restart (stale VM DNS, see open-questions) the image builds, and the rebuilt
+  container shows the Fleet page with both demo stations live and no console errors.
 - **Design sign-off.** I checked the screenshots against the rules: colour only for state, CRT
   on every screen, the bay group engraved like the other captions. Someone who owns the look
   should judge the plates behind the lamp text, the 16-lamp density and the ivory finish (not

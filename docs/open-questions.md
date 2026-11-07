@@ -25,13 +25,6 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   the edit-mode key row overflows more. Shorten the
   page keys (number only above N pages?) or let the row scroll.
 
-- **Fleet page frame time, 2 against 16 stations (step 10).** Under SwiftShader the Fleet
-  page's frame interval is 12–22 % longer with 16 stations than with 2 (flat from 5 stations
-  on). The CPU time per frame is the same. The difference is beam text: the radar names up to 5
-  contacts and the strands list up to 5 stations, and 2 stations fill only 2 of each. Needs a
-  measurement on a real GPU (`__mars.frames()` and the rAF interval). If it is still over
-  10 % there, choose between fewer named stations and cheaper text in the vector painter (one
-  instance per glyph dot today).
 - **`stationLog` and `log` bound to `*` are the same instrument (step 10).** The step asked for
   the all-stations log in the cross-station bay group, so it is a registry entry of its own,
   while `log` keeps its `*` binding (the Twin page uses it). Keep both, or migrate `log` + `*`
@@ -52,16 +45,27 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 ## Deploy
 
-- **Images can't be built in the Podman VM here (steps 07–09).** `npm ci` fails in the
-  `mars-web` build (step 07), and in step 09 the `mars-demo` build failed because the VM had no
-  DNS (`uv sync` couldn't reach PyPI). Live checks ran on files copied into the running
-  containers. A `podman machine` restart or real Docker (the step 12 CI) should settle it.
+Nothing open.
 
 ## Resolved
 
 Decided in review sessions on 2026-11-06 and 2026-11-07. "→ step N" is where the decision
 gets built.
 
+- **Images couldn't be built in the Podman VM (steps 07–09).** Resolved 2026-11-07, before
+  step 12. The cause was DNS, not npm: in the VM, IPv6 (AAAA) lookups timed out after 8 s
+  (IPv4 took 0.04 s), because its resolver set-up was captured on another network and never
+  refreshed. `npm ci` then crashed with "Exit handler never called!", and `uv sync` couldn't
+  reach PyPI. `podman machine stop && podman machine start` fixed it (both lookups 0.03 s);
+  `podman-compose --profile demo build` then built both images (`npm ci`: 51 packages in 2 s),
+  and the rebuilt `mars-web` serves the Fleet page live. Worth a line in the deploy docs: after
+  a network change, restart the Podman machine. → step 12.
+- **Fleet page frame time, 2 against 16 stations (step 10).** Resolved 2026-11-07, before
+  step 12. On a real GPU (Apple M4 Pro, ANGLE Metal, 60 Hz vsync) the frame interval is
+  16.83 / 16.67 / 16.67 ms at 2 / 5 / 16 stations (−1.0 %), with no dropped frames. "Frame time"
+  means the frame interval, as in step 10's measurement (user's decision). The CPU time per
+  frame grows 0.98 → 1.76 ms, still ~10 % of the budget. A Raspberry Pi 5 is unmeasured; the
+  levers are `NAMED` / `LISTED` and painter text cost. → step 10 handoff.
 - **Standard pages and the 9-page cap (step 08):** drop the cap. The schema has no maximum page
   count, so "Add standard pages for station…" always fits. Keys `1`–`9` still jump to the first
   nine pages, and `[` / `]` step through all of them. ADR-0006 and `MAX_PAGES` in
