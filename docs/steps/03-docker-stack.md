@@ -1,6 +1,6 @@
 # Step 03: Docker stack and recording rules
 
-Status: partial
+Status: done
 Depends on: 02
 Read first: [ADR-0002](../adr/0002-prometheus-backend.md), [ADR-0003](../adr/0003-metric-contract.md), [ADR-0004](../adr/0004-docker-compose.md)
 
@@ -52,7 +52,7 @@ the loadgen and the MARS web container. The `mars:*` recording rules are live an
 ## Acceptance criteria
 
 - [x] The promtool tests pass.
-- [ ] `docker compose -f deploy/compose.yaml --profile demo up -d --build` brings everything up
+- [x] `docker compose -f deploy/compose.yaml --profile demo up -d --build` brings everything up
       healthy within 60 s.
 - [x] Within 60 s, `curl localhost:8080/prom/api/v1/query --data-urlencode
       'query={__name__=~"mars:.+"}'` returns every station-level rule for both `api` and
@@ -78,12 +78,17 @@ Changes to the MARS app (it still uses the simulator), auth, TLS.
 
 ## Handoff
 
-**Status is `partial` for one reason:** this machine has no compose provider (Podman only, no
-`docker-compose` or `podman-compose`, and downloading one was blocked in this session), so
-`docker compose … up` and `docker compose … config` were **never run**. Everything the stack
-does was checked by starting the same images with the same mounts, flags, env, network aliases
-and healthchecks through plain `podman run`. Criteria 3–6 are ticked on that basis; criterion 2
-(compose brings it up healthy) stays open until someone runs compose once.
+**Status was `partial` until 2026-11-06.** When this step was built, the machine had no compose
+provider (Podman only), so criteria 3–6 were checked by starting the same images with plain
+`podman run`. On 2026-11-06 criterion 2 was closed with `podman-compose` 1.x
+(`uv tool install podman-compose`):
+`podman-compose -f deploy/compose.yaml --profile demo up -d` brought all five containers up, and
+the four with healthchecks were healthy within ~16 s. Both targets were up, each station had 28
+`mars:` series, and `:8080` returned 200. Two caveats: `--build` under podman-compose builds the
+shared `mars-demo:local` image three times in parallel, so the image was built once with
+`podman build` first. And the Podman VM's DNS had broken (uv downloads failed with "dns error"),
+which a `podman machine stop/start` fixed. Real Docker Compose with BuildKit still hasn't been
+run.
 
 **Built**
 

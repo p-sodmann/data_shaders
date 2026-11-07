@@ -3,79 +3,62 @@
 Add questions as you find them, under a heading for their area. Resolve them by moving them
 to **Resolved** with the answer, the date and the step or ADR that settled them.
 
-## Service panel
-
-- **Standard pages and the 9-page cap (step 08).** "Add standard pages for station…" adds five
-  pages, so the built-in document (5 pages) has to lose two before it can take a second
-  station's set, and the panel refuses with `no room for 5 more pages`. Options: allow it to add
-  as many as fit, let it replace the current pages, or raise the cap (keys `1`–`9` would need
-  another way to reach pages 10+).
-- **A saved `?config=` document still loses to the URL (step 08).** After *Save as local*,
-  reloading with the same `?config=` loads the URL's document again (ADR-0005 load order), so a
-  kiosk link keeps showing the unedited cartridge. Should a saved copy of a URL document win
-  over that URL (for example, keyed by the URL), or is "open it without `?config=`" right?
-- **Undo history is in memory only (step 08).** It's lost on reload and covers every document
-  change, console edits included. Is that enough, or should the last N snapshots go to
-  sessionStorage?
-
-## UI
-
-- **Bank divider rule (step 05):** the old layout drew an engraved rule between the deck and the
-  bank below it. Pages are now one 12 × 8 grid, so the rule is gone. Should a page be able to
-  carry dividers (for example `dividers: [{ y: 6 }]`, drawn in a grid gap), or is the plain gap
-  right? Step 08's editor would need to place them.
-- **Portrait and narrow screens overflow sideways (step 05, existed before):** below a 5:4
-  aspect ratio, the footer keys and the header tubes make the device wider than the viewport
-  (1156 px at 1080 × 1600, the same before and after step 05). The single-column deck fits.
-  The footer keys would need to wrap or shrink.
-
-## Config and stations
-
-- **Shared config across displays (`PUT /config/mars.json`), deferred from step 06.** Decided:
-  Caddy accepts the PUT only when basic auth is on. Not built yet, because basic auth arrives in
-  step 12 and Caddy's `file_server` has no PUT (it needs a WebDAV module in the image or a small
-  handler). The web side would call it from the step 08 editor's save. → step 12 (with auth)
-  or step 08.
-- **Changing a station recreates it (step 06).** Profiles are frozen, so editing thresholds in
-  step 08 rebuilds the station, and a sim station re-backfills its 4 h. For Prometheus
-  stations (step 07) the backfill comes from Prometheus, so little is lost. Is that acceptable
-  for the editor, or should thresholds become live-mutable on the store?
-- **Long station names in the System tube (step 06).** With several stations the tube shows
-  `DEGRADED · <NAME>` and shrinks its dots to fit (names up to 24 characters). At 24 characters
-  the dots get small. Cap displayed names, widen the tube, or scroll?
-
-## Prometheus source
-
-- **Nodes that go away stay offline (step 07).** A node that leaves Prometheus keeps its slot
-  and shows as offline, so a scale-down counts as NODES DOWN on the C&W panel until a reload
-  ([ADR-0007](adr/0007-runtime-entities.md)). Should a slot retire after some time without
-  `mars:node_up` (say 15 min), or should a removed file_sd target count as intentional?
-- **Stage order isn't in the metrics (step 07).** Exemplars belong to requests, not stages,
-  so "first appearance in a trace" can't be read. Without a `stages` override the order comes
-  from the stage names (ingress/auth first, egress last, the rest by name). Should the probe
-  export the order, for example `mars_stage_info{stage, order}` (an ADR-0003 change)?
-- **External alerts without a `station` label (step 07).** Only firing alerts whose `station`
-  label matches light that station's lamp. Should alerts without the label light the device
-  lamp?
-- **Almanac error rate from Prometheus (step 07).** Minutes read from Prometheus use
-  `avg_over_time(mars:error_ratio[1m])`, which isn't weighted by throughput as the live minutes
-  are. The difference is small at steady traffic. Is it worth a recording rule for
-  `sum(rate(...5xx))` / `sum(rate(...))` over 1 m?
-- **Auto SLOs of small, fast routes flap (step 07).** 2 × the observed 4-hour P95 gives
-  `/v1/models` in the demo an SLO of 10 ms, and its P95 over a 10 s window comes from about
-  20 requests, so it swings between CLOSING and OVER SLO and fills the event log. Should auto
-  SLOs have a floor (for example the station's `thresh.warn`), or should endpoint state need a
-  minimum request rate?
-- **Rhythms can't see the demo's batch job (step 07).** The 5-minute `/v1/rank` batch shows in
-  throughput (+20–25 % for ~20 s) but not in P50 latency, and the rhythm search folds latency
-  only. On 25 min of continuous real data the latency fold at 300 s had no batch bump, and no
-  rhythm was found. Should the analyser also fold throughput (and report which signal a rhythm
-  is in), or should the demo's batch job load latency (for example, longer `rank` work per
-  batch request)? Step 07's criterion "Rhythms finds the 5-minute batch job" waits on this.
+No open questions right now.
 
 ## Resolved
 
-Decided in one review session on 2026-11-06. "→ step N" is where the decision gets built.
+Decided in review sessions on 2026-11-06 and 2026-11-07. "→ step N" is where the decision
+gets built.
+
+- **Standard pages and the 9-page cap (step 08):** drop the cap. The schema has no maximum page
+  count, so "Add standard pages for station…" always fits. Keys `1`–`9` still jump to the first
+  nine pages, and `[` / `]` step through all of them. ADR-0006 and `MAX_PAGES` in
+  `web/src/config/edit.js` change. → follow-up to step 08. 2026-11-07.
+- **A saved `?config=` document still loses to the URL (step 08):** the saved copy wins. *Save
+  as local* stores the document under a key for the `?config=` URL, and that copy overrides the
+  URL on that display. The header shows a LOCAL marker, and *Revert to URL* clears the copy.
+  ADR-0005 load order changes. → follow-up to step 08. 2026-11-07.
+- **Undo history is in memory only (step 08):** persist it to localStorage. Keep the last 50
+  snapshots under the same key as the document (built-in, or the `?config=` URL). Drop the
+  history when its newest snapshot doesn't match the loaded document, for example after a
+  shared PUT or a changed URL. → follow-up to step 08. 2026-11-07.
+- **Nodes that go away stay offline (step 07):** accepted. A node that leaves Prometheus keeps
+  its slot and shows as offline until a reload, so a scale-down counts as NODES DOWN
+  ([ADR-0007](adr/0007-runtime-entities.md) unchanged). 2026-11-07.
+- **Stage order isn't in the metrics (step 07):** the probe exports `mars_stage_info{stage,
+  order}`, with the order taken from declaration order or an explicit argument (an ADR-0003
+  change). The web side uses it first, then the `stages` override, then the name heuristic.
+  → follow-up to steps 01/07. 2026-11-07.
+- **External alerts without a `station` label (step 07):** they light a device-level
+  `EXT ALERTS` lamp that isn't tied to a station, and log as `EXT ALERT … FIRING` without a
+  station. → follow-up to step 07. 2026-11-07.
+- **Almanac error rate from Prometheus (step 07):** add a recording rule
+  `mars:error_ratio:rate1m` = `sum(rate(...5xx[1m])) / sum(rate(...[1m]))` per station. The
+  almanac backfill reads it, so backfilled minutes are throughput-weighted like live ones.
+  → follow-up to steps 03/07. 2026-11-07.
+- **Auto SLOs of small, fast routes flap (step 07):** both fixes. An auto SLO is
+  `max(2 × P95, thresh.warn)`. Below a minimum rate (about 5 req/s, or fewer than 50 samples
+  in the window) an endpoint keeps its last state and shows LOW N instead of changing state.
+  → follow-up to step 07. 2026-11-07.
+- **Rhythms can't see the demo's batch job (step 07):** the analyser folds throughput as well
+  as latency and reports which signal a rhythm is in (for example `5m · THRU`). Step 07's
+  criterion "Rhythms finds the 5-minute batch job" waits on this. → follow-up to step 07.
+  2026-11-07.
+
+- **Bank divider rule (step 05):** keep the plain grid gap. Pages get no `dividers` field, so
+  the step 08 editor has nothing extra to place. 2026-11-06.
+- **Portrait and narrow screens overflow sideways (step 05):** below 5:4, the footer keys wrap
+  onto a second row and the header tubes shrink, so the device fits the viewport. A small CSS
+  fix. → follow-up to steps 05/06.
+- **Shared config across displays (`PUT /config/mars.json`):** a small upload handler next to
+  Caddy, enabled only when `MARS_BASIC_AUTH` is set. Caddy's `file_server` stays read-only.
+  The step 08 editor's save calls it once it exists. → step 12.
+- **Changing a station recreates it (step 06):** accepted. Any edit to a station entry rebuilds
+  the station. Prometheus stations refill from Prometheus, and edits are rare, so thresholds
+  stay frozen in the profile. 2026-11-06.
+- **Long station names in the System tube (step 06):** the tube shows the name cut to about
+  12 characters, and module headers keep the full name. The schema limit stays at 24.
+  → follow-up to step 06.
 
 - **JSON polling source in the config document:** accept it. ADR-0005 gets a third source kind,
   `{ kind: 'poll', url, hosts }`, next to `sim` and `prometheus`, so custom JSON feeds keep
