@@ -40,6 +40,11 @@ class stage:  # noqa: N801 - used like a function: `with stage("embed")`, `@stag
         self._starts: list[float] = []
 
     def __enter__(self):
+        # The pipeline order (mars_stage_info) is the order stages are first entered: on exit an
+        # outer stage would come after the stages nested in it.
+        probe = self.probe or _current.get() or _default
+        if probe is not None:
+            probe.see_stage(self.name)
         self._starts.append(perf_counter())
         return self
 

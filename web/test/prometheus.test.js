@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chunks, createPromClient, pool, MAX_POINTS } from '../src/data/prometheus/client.js';
-import { discover, orderStages, defaultSlo } from '../src/data/prometheus/discover.js';
+import { discover, orderStages, probeOrder, defaultSlo } from '../src/data/prometheus/discover.js';
 import { createPrometheusSource } from '../src/data/prometheus/source.js';
 import { createStation } from '../src/station/station.js';
 import { createProfile } from '../src/station/profile.js';
@@ -38,6 +38,7 @@ function fakeProm() {
     if (path === 'query') {
       if (q.query.startsWith('histogram_quantile')) return ok(fx('endpoint-p95-4h.json'));
       if (q.query.startsWith('avg_over_time(mars:stage')) return ok(fx('stage-mean-4h.json'));
+      if (q.query.includes('mars_stage_info')) return ok(state.stageInfo ?? fx('stage-info.json'));
       // Prometheus's clock runs `skew` seconds ahead of the browser's
       const serverNow = Date.now() / 1000 + state.skew;
       if (q.query === 'time()') return ok(success({ resultType: 'scalar', result: [serverNow, String(serverNow)] }));
@@ -152,6 +153,20 @@ describe('discovery', () => {
     // the station's thresh.warn is the floor: a 5 ms route doesn't get a 10 ms SLO
     expect(defaultSlo(5, 25)).toBe(25);
     expect(defaultSlo(20, 25)).toBe(40);
+  });
+
+  it('orders stages by the probe, after the override and before the names', async () => {
+    // a probe that declared rank before embed, and never saw egress
+    const info = (pairs) => success({ resultType: 'vector', result: pairs.map(([stage, order]) => ({ metric: { stage, order: String(order) }, value: [LIVE_T, '1'] })) });
+    prom.stageInfo = info([['ingress', 0], ['auth', 1], ['rank', 2], ['embed', 3], ['infer', 4]]);
+    const client = createPromClient({ fetch: prom.fetch });
+    expect((await discover(client, 'api', {}, LIVE_T)).stages).toEqual(['ingress', 'auth', 'rank', 'embed', 'infer', 'egress']);
+    expect((await discover(client, 'api', { stages: ['infer'] }, LIVE_T)).stages).toEqual(['infer', 'ingress', 'auth', 'rank', 'embed', 'egress']);
+    // an older probe exports nothing: the name heuristic as before
+    prom.stageInfo = info([]);
+    expect((await discover(client, 'api', {}, LIVE_T)).stages).toEqual(['ingress', 'auth', 'embed', 'infer', 'rank', 'egress']);
+    // two instances that saw a stage at different positions: the earliest wins
+    expect(probeOrder(info([['a', 3], ['a', 1], ['b', 2]]).data.result)).toEqual(new Map([['a', 1], ['b', 2]]));
   });
 
   it('joins region codes against the table and skips unknown ones once', async () => {

@@ -59,7 +59,9 @@ docker compose -f deploy/compose.yaml --profile demo down      # add -v to drop 
    down.
 
 Check <http://localhost:9090/targets>: the target should be `UP`, and
-`mars:node_up{station="shop"}` should be 1.
+`mars:node_up{station="shop"}` should be 1. Then open the display's service panel (`E`), press
+**Stations**: `shop` is listed under *Available on Prometheus*, and **Add** puts it on the device
+(with its standard pages if you like). See [web/README.md](../web/README.md#stations-and-cartridges).
 
 ## Files
 

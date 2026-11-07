@@ -7,7 +7,7 @@ from collections.abc import Iterable
 
 from prometheus_client import CollectorRegistry, Gauge, Histogram
 
-from . import stages
+from . import stages as _stages
 from ._version import __version__
 from .collectors import CpuCollector
 from .exemplars import TokenBucket
@@ -36,6 +36,7 @@ class Probe:
         exemplar_rate: float = 1.0,
         exclude_paths: Iterable[str] = ("/metrics",),
         metrics_path: str | None = "/metrics",
+        stages: Iterable[str] = (),
     ):
         if not STATION_RE.match(station):
             raise ValueError(f"station {station!r} must match {STATION_RE.pattern}")
@@ -75,6 +76,14 @@ class Probe:
             buckets=BUCKETS,
             registry=r,
         )
+        # Prometheus can't tell which stage comes first in a request, so the probe says so: the
+        # order given here, then stages in the order this process first sees them.
+        self._stage_info = Gauge(
+            "mars_stage_info", "Pipeline position of a stage", s + ["stage", "order"], registry=r
+        )
+        self._stage_order: dict[str, int] = {}
+        for name in stages:
+            self.see_stage(name)
         self._signal = Gauge("mars_signal", "Custom signals", s + ["signal"], registry=r)
         r.register(CpuCollector(station))
 
@@ -101,11 +110,19 @@ class Probe:
         child = self._stage_children.get(name)
         if child is None:
             child = self._stage_children[name] = self._stage.labels(self.station, name)
+            self.see_stage(name)
         child.observe(seconds)
 
-    def stage(self, name: str) -> stages.stage:
+    def see_stage(self, name: str) -> None:
+        """Give a stage its pipeline position the first time it is seen (`mars_stage_info`)."""
+        if name in self._stage_order:
+            return
+        order = self._stage_order[name] = len(self._stage_order)
+        self._stage_info.labels(self.station, name, str(order)).set(1)
+
+    def stage(self, name: str) -> _stages.stage:
         """Like `mars_probe.stage`, but always records to this probe."""
-        return stages.stage(name, probe=self)
+        return _stages.stage(name, probe=self)
 
     def gauge(self, signal: str) -> Gauge:
         """A custom signal, exposed as `mars_signal{station, signal}`."""
@@ -120,8 +137,12 @@ def instrument(
     metrics_path: str | None = "/metrics",
     exemplar_rate: float = 1.0,
     exclude_paths: Iterable[str] = ("/metrics",),
+    stages: Iterable[str] = (),
 ) -> Probe:
     """Instrument a FastAPI/Starlette app and (unless `metrics_path` is None) serve /metrics.
+
+    `stages` is the pipeline order of the app's `stage()` names, exported as `mars_stage_info`.
+    Stages not listed follow in the order the process first sees them.
 
     Must be called before the app starts serving, like any `add_middleware`.
     """
@@ -131,8 +152,9 @@ def instrument(
         exemplar_rate=exemplar_rate,
         exclude_paths=exclude_paths,
         metrics_path=metrics_path,
+        stages=stages,
     )
     app.add_middleware(MarsMiddleware, probe=probe)
     # Stages outside any request go to the most recently instrumented app.
-    stages.set_default(probe)
+    _stages.set_default(probe)
     return probe

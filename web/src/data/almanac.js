@@ -22,7 +22,8 @@ export const slotOf = (mi) => ((mi % N) + N) % N;
 // key: this almanac's IndexedDB record. legacyKey: an older record for the same
 // station, copied to `key` the first time `key` doesn't exist yet.
 export function createAlmanac({ profile, key, legacyKey = null }) {
-  const { thresh, slo, burnAlerts } = profile;
+  const { slo, burnAlerts } = profile;
+  let thresh = profile.thresh; // retune() swaps it for minutes filled from now on
   const BUDGET = 1 - slo.target;
   const m = new Int32Array(N).fill(-1);
   const lat = new Float32Array(N), err = new Float32Array(N), tp = new Float32Array(N), sat = new Float32Array(N);
@@ -256,6 +257,9 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
   }
 
   return {
+    retune(next) {
+      thresh = next.thresh;
+    },
     get version() {
       return version;
     },

@@ -34,7 +34,7 @@ async def item(item_id: int):
 ```
 
 `instrument(app, station, *, max_inflight=None, metrics_path="/metrics", exemplar_rate=1.0,
-exclude_paths=("/metrics",))`:
+exclude_paths=("/metrics",), stages=())`:
 
 - `station` must match `^[a-z][a-z0-9-]{0,31}$`. It is the `station` label on every series.
 - `max_inflight` feeds the saturation rule (`mars_http_requests_in_flight_limit`, 0 if unset).
@@ -42,6 +42,10 @@ exclude_paths=("/metrics",))`:
 - `exemplar_rate` is exemplars per second (about); 0 disables them. Exemplars only appear in
   the OpenMetrics format, which Prometheus requests by default.
 - `exclude_paths` are exact paths (after `root_path`) that aren't timed.
+- `stages` is the pipeline order of your `stage()` names, for example
+  `stages=["ingress", "auth", "infer", "egress"]`. It is exported as `mars_stage_info` and the
+  display draws the pipeline in that order. Stages not listed follow in the order the process
+  first enters them.
 
 `stage(name)` works as `with`, `async with` and as a decorator on sync and async functions.
 Inside a request it records to the app serving that request; outside one, to the most
@@ -56,7 +60,8 @@ The metric names, labels and buckets are a contract with the Prometheus recordin
 the display: see [ADR-0003](../docs/adr/0003-metric-contract.md). In short: `mars_info`,
 `mars_http_request_duration_seconds`, `mars_http_requests_in_flight`,
 `mars_http_requests_in_flight_limit`, `mars_process_cpu_seconds_total`,
-`mars_stage_duration_seconds` and `mars_signal`. `route` is always the route template
+`mars_stage_duration_seconds`, `mars_stage_info` (a stage's pipeline position, `order`) and
+`mars_signal`. `route` is always the route template
 (mount prefixes included), or `<unmatched>`; `region` is `unknown` until step 11.
 
 ## Prometheus

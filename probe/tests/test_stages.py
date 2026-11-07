@@ -74,3 +74,33 @@ def test_bound_probe_stage_and_no_probe_noop():
     with stage("nowhere"):  # no probe: silently ignored
         pass
     assert isinstance(probe_a, Probe)
+
+
+def stage_order(probe):
+    return {
+        s.labels["stage"]: int(s.labels["order"])
+        for fam in probe.registry.collect()
+        if fam.name == "mars_stage_info"
+        for s in fam.samples
+        if s.value == 1
+    }
+
+
+def test_stage_info_orders_declared_then_first_seen():
+    _, probe = build_app("order", stages=["ingress", "infer", "egress"])
+    # declared stages are exported before any request has run
+    assert stage_order(probe) == {"ingress": 0, "infer": 1, "egress": 2}
+    with probe.stage("cache"):
+        pass
+    with probe.stage("infer"), probe.stage("audit"):
+        pass
+    assert stage_order(probe) == {"ingress": 0, "infer": 1, "egress": 2, "cache": 3, "audit": 4}
+
+
+def test_stage_info_without_declared_order(app_probe):
+    app, probe = app_probe
+    assert stage_order(probe) == {}
+    with TestClient(app) as c:
+        c.get("/staged")
+    # "inner" ends first, but "outer" is entered first, and that is the pipeline order
+    assert stage_order(probe) == {"outer": 0, "inner": 1}

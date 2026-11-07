@@ -1,6 +1,6 @@
 # ADR-0005: Stations and layout live in one config document
 
-Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides) · amended 2026-11-07 (step 08b: saved copies of `?config=` documents, auto SLO floor, no page cap)
+Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides) · amended 2026-11-07 (step 08b: saved copies of `?config=` documents, auto SLO floor, no page cap; step 09: `stages` before the probe's order, thresholds retune a running station, cartridge files)
 
 ## Context
 
@@ -48,7 +48,8 @@ One JSON document (a "cartridge") describes the device. It is validated with **z
   `endpoints: [{ route, slo }]` (P95 SLO in ms for a route, listed even before it has
   traffic; without it a route's SLO is 2 × its observed 4-hour P95, rounded, and at least the
   station's `thresh.warn` *(floor added in step 08b)*) and
-  `stages: ["ingress", …]` (pipeline order; stages not listed follow, ordered by name).
+  `stages: ["ingress", …]` (pipeline order; stages not listed follow in the probe's
+  `mars_stage_info` order, then by name *(since step 09)*).
   Entities that appear later fill spare slots ([ADR-0007](0007-runtime-entities.md)).
 - **Source kinds:** `{ kind: "sim", hosts, seed?, speed? }`,
   `{ kind: "prometheus", station }` and `{ kind: "poll", url, hosts }`. `poll` is a custom JSON
@@ -75,6 +76,15 @@ One JSON document (a "cartridge") describes the device. It is validated with **z
 - Every saved document has `version`. Loaders migrate older versions forward with explicit
   functions in `web/src/config/migrations.js`. A document without `version` is v0: the
   pre-document device, one station described by the legacy fields above.
+- *(Step 09.)* A change to a station entry replaces the running station, except a change to
+  `thresh` alone: that retunes the running station (its store, source and almanac judge by the
+  new values from the next sample) and keeps its tape.
+- *(Step 09.)* A **cartridge file** is a document saved as `mars-<YYYY-MM-DD>.mars.json` (the
+  document as JSON, nothing else). Importing one migrates and validates it like any other
+  source; it then replaces the document, or is merged into it: its stations are added (same id
+  and same source: the current entry stays; same id, other source: the incoming one gets a free
+  id and its panels follow), its pages appended with free ids, and `device` and `prometheus`
+  stay the current document's.
 - Existing URL parameters (`fps`, `dpr`, `finish`, `page`, `cycle`) still work as overrides.
   They apply to the session only and are never written into the document. `page` is not a
   document field.

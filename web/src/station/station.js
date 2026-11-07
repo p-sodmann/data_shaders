@@ -42,7 +42,8 @@ const RETRY_MS = [2000, 5000, 10000, 30000];
 const archiveStartOf = (now) => Math.floor(now / ROW_SECONDS) * ROW_SECONDS - (ROWS - 1) * ROW_SECONDS;
 
 export function createStation(def, ctx = {}) {
-  const { source: src = { kind: 'sim' }, endpoints: epOverride, stages: stOverride, ...overrides } = def;
+  const { source: src = { kind: 'sim' }, endpoints: epOverride, stages: stOverride, ...rest } = def;
+  let overrides = rest; // retune() replaces its thresholds
   const prom = src.kind === 'prometheus';
   const client = prom ? createPromClient({ url: ctx.prometheus ?? '/prom', fetch: ctx.fetch }) : null;
 
@@ -269,6 +270,21 @@ export function createStation(def, ctx = {}) {
           }, 0);
         }
       };
+    },
+
+    // New thresholds without a rebuild (the stations plate, step 09): the
+    // profile is made again with them, the store, source and almanac judge by
+    // them from the next sample, and panels build their instruments again (a
+    // new generation) on the same tape. Any other change to the entry still
+    // replaces the station (manager.js).
+    retune(next) {
+      overrides = { ...overrides, thresh: next.thresh };
+      profile = createProfile({ ...profile, thresh: next.thresh });
+      store.retune(profile);
+      source.retune?.(profile);
+      almanac.retune(profile);
+      signal = null;
+      setStatus({ generation: status.generation + 1 });
     },
 
     // { phase: 'load' | 'live', progress 0..1, problem, generation }, frozen;

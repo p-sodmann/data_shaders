@@ -1,6 +1,6 @@
 # ADR-0003: Metric and recording-rule contract
 
-Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b)
+Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b) · amended 2026-11-07 in step 09 (a station's `stages` override goes before `mars_stage_info`; "first saw" means first entered)
 
 This is the interface between `mars-probe` (step 01), the Prometheus rules (step 03) and the
 MARS Prometheus source (step 07). Change it only by editing this ADR in the same commit.
@@ -23,7 +23,7 @@ MARS Prometheus source (step 07). Change it only by editing this ADR in the same
 | `mars_http_requests_in_flight_limit` | gauge | `station` | `max_inflight` from the probe config. 0 means unset. |
 | `mars_process_cpu_seconds_total` | counter | `station` | `time.process_time()` of the process. |
 | `mars_stage_duration_seconds` | histogram | `station`, `stage` | Time spent inside `with stage("name")`. |
-| `mars_stage_info` | gauge (=1) | `station`, `stage`, `order` | Pipeline position of a stage, from `instrument(app, stages=[…])`, else the order in which the process first saw each stage. *(Step 09.)* |
+| `mars_stage_info` | gauge (=1) | `station`, `stage`, `order` | Pipeline position of a stage (`order` = 0, 1, …), from `instrument(app, stages=[…])`, then the order in which the process first entered each other stage. Listed stages are exported from the start, before any request. Several instances may disagree; the display takes a stage's lowest `order`. *(Step 09.)* |
 | `mars_client_rtt_seconds` | histogram | `station`, `region` | Optional (step 11). Client RTT taken from a trusted proxy header. |
 | `mars_signal` | gauge | `station`, `signal` | Optional custom signals (`probe.gauge("queue_depth")`). |
 
@@ -77,7 +77,7 @@ by `mars-probe rules`, and mounted directly by `deploy/compose.yaml`. It is cove
 |---|---|
 | `latency`, `throughput`, `errorRate`, `saturation` | the station-level rules |
 | `hosts[i].load / state / latency` | `node_load_ratio`, `node_up` (0 means offline), `node_latency_p50_ms`. Warn and crit come from MARS thresholds on load. |
-| `stages` | `stage_mean_ms`, ordered by `mars_stage_info` (from step 09), then the station's `stages` override, then by name |
+| `stages` | `stage_mean_ms`, ordered by the station's `stages` override (a person set it on the stations plate), then by `mars_stage_info`, then by name *(override first since step 09)* |
 | `endpoints` | `endpoint_*` by route |
 | `regions` | `region_*` by region |
 | `requests` | exemplars |

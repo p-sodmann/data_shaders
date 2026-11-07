@@ -112,6 +112,41 @@ says *URL cartridge · local copy wins* and the header's Station plate *· local
 to URL** (press twice) deletes the copy and its history and reloads the link's own document.
 A document from the legacy parameters becomes the display's own document when saved.
 
+### Stations and cartridges
+
+The **Stations** key on the panel opens the stations plate in a wider service column (the deck
+stays in view):
+
+- **The table**: one row per station: lamp, name, source (`PROM api`, `SIM #2`, `POLL`), nodes,
+  live RPS, `✎` edit and `✕` remove. Removing a station that no panel uses takes two presses.
+  If panels use it, the plate asks whether to remove them too or move them to another station
+  (one undo step either way). The last station can't be removed.
+- **Prometheus**: the document's `prometheus.url`, editable, with a lamp that is lit while
+  `/api/v1/status/buildinfo` answers.
+- **Available on Prometheus**: the `station` label values of `mars_info` (last hour) that no
+  station reads yet, each with its live P50 and RPS (one query for all of them). `+ Add` creates
+  `{ id, name: "<VALUE>-01", source: { kind: "prometheus", station } }` and offers the five
+  standard pages for it.
+- **Edit** (`✎`): name, thresholds (P50, error and saturation warn/crit, the tape, error and RPS
+  scales), SLO target and window, home (a region code from
+  [src/data/regions.js](src/data/regions.js), or lat/lon), and for a Prometheus station the P95
+  SLO per discovered route and the pipeline order (`▲` moves a stage up; *Probe order* goes back
+  to the order the probe exports). An empty field means the default, which it shows faintly. A
+  value the document's schema refuses, or a warn above its crit, is written in amber under the
+  field and doesn't go in. Threshold changes take effect on the running station at once: lamps,
+  limit lines and bars change, and the tape stays. Any other change restarts the station (a
+  Prometheus station reloads its tape, about 3 s).
+- **Cartridge**: **Export** downloads the document as `mars-<date>.mars.json`. **Import** takes
+  such a file (or drop one anywhere on the open device), shows its stations and pages, or every
+  problem it has (then nothing changes), and **Replace**s the document or **Merge**s it in.
+  Merging adds the file's stations and pages: a station with the same id and source is kept
+  as it is, one with the same id and another source gets a new id (its panels follow), and
+  device settings stay. Imports run the version migrations. **Reset** (press twice) goes back to
+  the built-in document. All three are undoable.
+
+Adding a server to Prometheus is still a file in `deploy/prometheus/targets/`
+([deploy/](../deploy/README.md)); the plate lists what Prometheus already scrapes.
+
 **Lock** sets `device.locked` in the document. A locked display ignores `E` and clicks on
 `SERVICE`; hold `SERVICE` for 2 s (or open the page with `?unlock=1`) to get in. The long-press
 unlock lasts until the housing is closed again.
@@ -135,8 +170,8 @@ Several stations run side by side. With more than one, module headers carry the 
 the alarm lamp and the System tube show the worst station, and an event log bound to
 `"station": "*"` merges every station's events.
 
-Pages can be edited on the device itself (the service panel, above). Stations are still added
-in the devtools console (a stations plate is step 09):
+Pages and stations can be edited on the device itself (the service panel and the stations
+plate, above). The devtools console can do the same:
 
 ```js
 __mars.getDoc()                       // the current document (frozen)
@@ -210,9 +245,11 @@ Optional overrides in the station entry:
 
 Without an `endpoints` entry, a route's P95 SLO is **2 × its observed 4-hour P95**, rounded, and
 at least the station's `thresh.warn` (so a 5 ms route doesn't get a 10 ms SLO). The
-contacts table marks such SLOs with `A` (for example `61A`). Without `stages`, stages are ordered
-by their usual meaning (ingress/auth first, egress last), then by name. Each stage's normal
-share of the latency is learned from its 4-hour mean.
+contacts table marks such SLOs with `A` (for example `61A`). Stages listed in `stages` come
+first, in that order; the rest follow in the order the probe exports in `mars_stage_info`
+(`instrument(app, stages=[…])`, else the order the process first entered them), and stages a
+probe older than step 09 doesn't order go by their usual meaning (ingress/auth first, egress
+last), then by name. Each stage's normal share of the latency is learned from its 4-hour mean.
 
 Nodes, routes, stages and regions that appear later take spare slots and show up within a
 second. If the slots run out, the station rebuilds and refills its tape

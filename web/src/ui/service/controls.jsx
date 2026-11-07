@@ -58,6 +58,50 @@ export function Field({ value, onCommit, onCancel, maxLength = 32, autoFocus = f
   );
 }
 
+// An engraved field that may be left empty: the stations plate's settings,
+// where empty means "the default" (shown engraved in the field, faintly).
+// Commits whatever was typed, on Enter or when it loses focus; `error` is
+// written under it and keeps what was typed, so it can be corrected.
+export function Entry({ value, placeholder, onCommit, onCancel, error, maxLength = 64, className = '', name }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const done = useRef(false);
+  const commit = () => {
+    if (done.current) return;
+    done.current = true;
+    if (text !== value || error) onCommit(text.trim());
+  };
+  return (
+    <span className={`entry${error ? ' bad' : ''}`}>
+      <input
+        className={`field ${className}`}
+        value={text}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        spellCheck={false}
+        data-field={name}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={() => (done.current = false)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            commit();
+            done.current = false;
+          }
+          if (e.key === 'Escape') {
+            done.current = true;
+            setText(value);
+            onCancel?.();
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      {error && <span className="entry-error">{error}</span>}
+    </span>
+  );
+}
+
 // A number on an engraved window between − and + keys.
 export function Stepper({ value, min = -Infinity, max = Infinity, step = 1, onChange }) {
   const set = (v) => onChange(Math.min(max, Math.max(min, +(v.toFixed(6)))));

@@ -55,6 +55,9 @@ const station = z.object({
   stages: z.array(z.string().min(1)).optional(),
 });
 
+// one station entry on its own, for the stations plate's field checks
+export const stationSchema = station;
+
 const panel = z.object({
   id: z.string().min(1),
   type: z.string().min(1),

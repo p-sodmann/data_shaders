@@ -47,6 +47,8 @@ export function createPromClient({ url = '/prom', fetch: get = (...a) => globalT
     exemplars: (query, start, end) => call('query_exemplars', { query, start, end }),
     // [{ labels, annotations, state, activeAt, value }]
     alerts: () => call('alerts', {}).then((d) => d.alerts),
+    // { version, revision, ... }: also the stations plate's connection check
+    buildinfo: () => call('status/buildinfo', {}),
     // Prometheus's own clock, in seconds
     time: () => call('query', { query: 'time()' }).then((d) => +d.result[0]),
   };

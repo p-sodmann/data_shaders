@@ -88,6 +88,8 @@ def create_app(
         station=station,
         max_inflight=max_inflight,
         exclude_paths=("/metrics", "/_chaos", "/healthz"),
+        # first-seen order would put rank after egress whenever /v1/predict comes first
+        stages=list(STAGE_LATENCY),
     )
     app.state.probe = probe
     # Read at scrape time, so it drops to 0 the moment an incident expires.

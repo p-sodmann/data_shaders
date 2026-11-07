@@ -75,11 +75,39 @@ describe('station manager', () => {
   it('recreates a station whose profile changed (profiles are frozen)', () => {
     manager.sync([sim('a')]);
     const old = manager.get('a');
-    manager.sync([sim('a', { thresh: { warn: 10 } })]);
+    manager.sync([sim('a', { slo: { target: 0.99 } })]);
     expect(manager.get('a')).not.toBe(old);
-    expect(manager.get('a').profile.thresh.warn).toBe(10);
-    expect(manager.get('a').profile.thresh.crit).toBe(35);
+    expect(manager.get('a').profile.slo.target).toBe(0.99);
     expect(old.stop).toHaveBeenCalled();
+  });
+
+  it('retunes a station whose thresholds alone changed, keeping its tape', async () => {
+    manager.sync([sim('a')]);
+    await vi.advanceTimersByTimeAsync(0);
+    const old = manager.get('a');
+    const store = old.store;
+    const rows = store.rowsVersion;
+    const gen = old.getStatus().generation;
+    const fn = vi.fn();
+    manager.subscribe(fn);
+    manager.sync([sim('a', { thresh: { warn: 5 } })]);
+    expect(manager.get('a')).toBe(old);
+    expect(old.stop).not.toHaveBeenCalled();
+    expect(created).toHaveLength(1);
+    // same store and tape, new profile; panels rebuild on the new generation
+    expect(old.store).toBe(store);
+    expect(store.rowsVersion).toBe(rows);
+    expect(old.profile.thresh).toMatchObject({ warn: 5, crit: 35 });
+    expect(store.profile).toBe(old.profile);
+    expect(old.getStatus().generation).toBe(gen + 1);
+    expect(fn).toHaveBeenCalled();
+    // judged by the new warn from the next samples on (this sim runs at about 8 ms)
+    vi.advanceTimersByTime(30_000);
+    expect(store.state).not.toBe('NOMINAL');
+    // back to the defaults: no thresh at all
+    manager.sync([sim('a')]);
+    expect(manager.get('a')).toBe(old);
+    expect(old.profile.thresh.warn).toBe(25);
   });
 
   it('notifies on a reorder without recreating', () => {

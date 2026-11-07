@@ -48,7 +48,9 @@ const SERIES_N = ROWS * ROW_SECONDS;
 // caps: { nodes, endpoints, stages, regions }, the most each table may grow
 // to; a table without a cap stays at its starting size.
 export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps = {}, nodeNames = null }) {
-  const { thresh, epErrBudget, serviceOf } = profile;
+  const { epErrBudget, serviceOf } = profile;
+  // the thresholds may be retuned while the station runs (retune below)
+  let thresh = profile.thresh;
   const signals = [...BASE_SIGNALS, ...profile.services];
   const hostCap = Math.max(hostCount, caps.nodes ?? 0);
   const rows = Array.from({ length: ROWS }, () => new Float32Array(ROW_SECONDS * 2).fill(-1));
@@ -398,6 +400,13 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
 
   return Object.assign(s, {
     push,
+    // New thresholds (the stations plate, step 09): the next sample is judged
+    // by them, and the tape and every table stay as they are.
+    retune(next) {
+      s.profile = next;
+      thresh = next.thresh;
+      s.refresh();
+    },
     // node data without a system sample: the source reached its backend, but the
     // station had nothing to report this second (a node down, no traffic)
     pushHosts(x) {

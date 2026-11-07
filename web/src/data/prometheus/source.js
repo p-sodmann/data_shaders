@@ -62,7 +62,7 @@ function group(result) {
 }
 
 export function createPrometheusSource({ client, station, profile, onOverflow = () => {} }) {
-  const { thresh } = profile;
+  let { thresh } = profile; // node states and new routes' SLO floor; see retune()
   const s = sel(station);
   let store = null;
   let idx = null;
@@ -258,6 +258,9 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
 
   return {
     kind: 'LIVE',
+    retune(next) {
+      thresh = next.thresh;
+    },
     get hostCount() {
       return store?.hostCount ?? 0;
     },

@@ -703,6 +703,84 @@ body.idle, body.idle * { cursor: none !important; }
   to { width: 100%; }
 }
 
+/* ---------- stations plate (step 09) ---------- */
+/* An engraved table on the service column, which widens for it. Lamps are
+   the only colour; a refused value is written in amber under its field. */
+.workbench.wide { grid-template-columns: minmax(0, 1fr) 72vmin; }
+.st-plate,
+.st-editor { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+.st-plate::-webkit-scrollbar,
+.st-editor::-webkit-scrollbar { width: 0.6vmin; }
+.st-plate::-webkit-scrollbar-thumb,
+.st-editor::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 99px; }
+.st-prom { display: flex; align-items: center; gap: 1.2vmin; flex-wrap: wrap; }
+.st-prom .field { width: 30vmin; }
+.st-contact { display: inline-flex; align-items: center; gap: 0.8vmin; }
+.field.plain { text-transform: none; letter-spacing: 0.04em; font-family: var(--mono); font-weight: 500; }
+.field::placeholder { color: var(--ink-faint); opacity: 1; }
+.st-table { display: flex; flex-direction: column; gap: 0.4vmin; }
+.st-row {
+  display: grid;
+  grid-template-columns: 1.6vmin minmax(0, 1.4fr) minmax(0, 1fr) 6vmin 7vmin auto;
+  gap: 1.2vmin;
+  align-items: center;
+  min-height: 3.6vmin;
+  padding: 0.3vmin 0.9vmin;
+  border-radius: 0.5vmin;
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-size: calc(var(--u) * 0.88);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.st-row.st-caps { background: none; box-shadow: none; min-height: 0; padding-bottom: 0; }
+.st-row > span { overflow: hidden; text-overflow: ellipsis; }
+.st-row .num { text-align: right; font-family: var(--mono); letter-spacing: 0.04em; }
+.st-name { font-weight: 600; }
+.st-src { color: var(--ink-dim); font-size: calc(var(--u) * 0.8); }
+.st-keys { display: flex; gap: 1vmin; justify-content: flex-end; overflow: visible !important; }
+.st-keys .key span { font-size: calc(var(--u) * 0.75); }
+.st-removing,
+.st-offer,
+.st-import-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9vmin;
+  padding: 1vmin 1.2vmin;
+  border-radius: 0.6vmin;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.st-removing .engraved,
+.st-offer .engraved,
+.st-import-summary .engraved { letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.5; }
+.st-removing .stations { flex-direction: row; flex-wrap: wrap; }
+.st-group { display: flex; flex-direction: column; gap: 0.8vmin; padding-top: 1.1vmin; border-top: 1px solid var(--rule); }
+.st-group > .cap { letter-spacing: 0.2em; }
+.st-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9vmin 1.6vmin; }
+.st-field { display: grid; grid-template-columns: 8.5vmin minmax(0, 1fr) 3.4vmin; gap: 0.7vmin; align-items: start; }
+.st-field > .cap { padding-top: 0.6vmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-field.route > .cap { text-transform: none; font-family: var(--mono); letter-spacing: 0.02em; }
+.st-field .unit { padding-top: 0.6vmin; font-size: calc(var(--u) * 0.72); color: var(--ink-faint); letter-spacing: 0.1em; text-transform: uppercase; }
+.entry { display: flex; flex-direction: column; gap: 0.3vmin; min-width: 0; }
+.entry .field { width: 100%; }
+.entry .field.num { font-family: var(--mono); font-weight: 500; letter-spacing: 0.04em; text-align: right; }
+.entry-error,
+.st-errors {
+  font-size: calc(var(--u) * 0.74);
+  letter-spacing: 0.06em;
+  line-height: 1.35;
+  color: #ffb54a; /* a refusal is a caution: amber, like the panel's notice */
+  white-space: normal;
+}
+.st-errors { margin: 0; padding-left: 1.6vmin; font-family: var(--mono); letter-spacing: 0; }
+.st-file { font: 500 calc(var(--u) * 0.85) var(--mono); color: var(--ink); }
+.st-stages { display: flex; flex-wrap: wrap; gap: 0.8vmin 1.4vmin; }
+.st-stage { display: inline-flex; align-items: center; gap: 0.8vmin; font-size: calc(var(--u) * 0.85); letter-spacing: 0.12em; text-transform: uppercase; }
+.st-stage .pos { font-size: calc(var(--u) * 0.72); color: var(--ink-dim); border: 1px solid var(--rule); border-radius: 99px; padding: 0.05em 0.5em; }
+.st-plate .plate-row,
+.st-editor .plate-row { grid-template-columns: 8.5vmin minmax(0, 24vmin); }
+
 /* ---------- other monitor shapes ---------- */
 @media (max-aspect-ratio: 5/4) {
   /* one column in panel order; each panel keeps its height share */

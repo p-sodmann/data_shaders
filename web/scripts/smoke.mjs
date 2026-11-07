@@ -2,13 +2,14 @@
 // and fail on console errors, page errors or missing module headers: the built-in default
 // document, the two-station example (?config=) and an old kiosk URL (legacy parameters, v0
 // migration). Then switch pages 50 times and fail if the engine's GPU object count grew, and run
-// a scripted service-panel session (step 08). Screenshots go to snapshots/ so a person can
-// compare them; nothing here diffs pixels.
+// a scripted service-panel session (step 08) and a stations-plate session against a recorded
+// Prometheus (step 09). Screenshots go to snapshots/ so a person can compare them; nothing here
+// diffs pixels.
 //
 //   npm run smoke            (SMOKE_SKIP_BUILD=1 reuses an existing dist/)
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -286,6 +287,105 @@ async function checkServicePanel(browser) {
   return errors;
 }
 
+// A recorded Prometheus for the stations plate (step 09): the fixtures of the unit tests
+// (src/data/prometheus/__fixtures__), served for the /prom routes. Instant answers are moved to
+// the time asked for; range queries come back empty, so a station's tape starts blank.
+const FIXTURES = join(ROOT, 'src/data/prometheus/__fixtures__');
+const fixture = (name) => JSON.parse(readFileSync(join(FIXTURES, name), 'utf8'));
+const READOUTS = '{__name__=~"mars:latency_p50_ms|mars:throughput_rps"}';
+function recordedProm(route) {
+  const url = new URL(route.request().url());
+  const path = url.pathname.replace(/^\/prom\/api\/v1\//, '');
+  const q = url.searchParams.get('query') ?? '';
+  const now = Date.now() / 1000;
+  const at = (body, t = +(url.searchParams.get('time') ?? now)) => {
+    for (const r of body.data.result) r.value[0] = t;
+    return body;
+  };
+  let body;
+  if (path === 'status/buildinfo') body = fixture('buildinfo.json');
+  else if (path === 'label/station/values') body = fixture('labels-station.json');
+  else if (path.startsWith('label/')) body = fixture(`labels-${path.split('/')[1]}.json`);
+  else if (path === 'series') body = fixture('series-node_up.json');
+  else if (path === 'alerts') body = fixture('alerts-empty.json');
+  else if (path === 'query_exemplars') body = fixture('exemplars.json');
+  else if (path === 'query_range') body = { status: 'success', data: { resultType: 'matrix', result: [] } };
+  else if (q === 'time()') body = { status: 'success', data: { resultType: 'scalar', result: [now, String(now)] } };
+  else if (q.startsWith('histogram_quantile')) body = fixture('endpoint-p95-4h.json');
+  else if (q.startsWith('avg_over_time(mars:stage')) body = fixture('stage-mean-4h.json');
+  else if (q.includes('mars_stage_info')) body = fixture('stage-info.json');
+  else if (q === READOUTS) body = at(fixture('readouts.json'));
+  else body = at(fixture('live.json'));
+  return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+}
+
+// The stations plate (step 09) on the built-in document: discover `api` on the recorded
+// Prometheus, add it with its standard pages, export the cartridge, reset the device, import the
+// file again and check that the document is the same as before the reset. Then an invalid file
+// must leave the document alone.
+async function checkStationsPlate(browser) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, acceptDownloads: true });
+  await context.route('**/prom/**', recordedProm);
+  const page = await context.newPage();
+  const errors = [];
+  page.on('console', (m) => m.type() === 'error' && errors.push(`console.error: ${m.text()}`));
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  const doc = () => page.evaluate(() => window.__mars.getDoc());
+  const expect = (ok, what) => ok || errors.push(what);
+
+  await page.goto(`${BASE}?page=1`, { waitUntil: 'load' });
+  await page.waitForTimeout(1500);
+  await page.keyboard.press('e');
+  await page.waitForSelector('.service', { timeout: 5000 });
+  await page.click('.stations-key');
+  await page.waitForSelector('.st-row.avail[data-value="api"]', { timeout: 8000 });
+  const avail = await page.$$eval('.st-row.avail', (rs) => rs.map((r) => r.dataset.value));
+  expect(avail.join() === 'api,search', `Available lists ${avail.join(', ')}`);
+  expect(/contact/i.test(await page.textContent('.st-contact')), 'no contact lamp caption');
+  await page.screenshot({ path: join(SNAPSHOTS, 'stations-plate.png') });
+
+  await page.click('.st-row.avail[data-value="api"] .st-add');
+  await page.click('.st-add-pages');
+  const live = await page
+    .waitForFunction(() => window.__mars.stations().find((s) => s.id === 'api')?.getStatus().phase === 'live', null, { timeout: 10000 })
+    .then(() => true, () => false);
+  expect(live, 'the added station never went live');
+  const added = await doc();
+  const api = added.stations.find((s) => s.id === 'api');
+  expect(JSON.stringify(api) === JSON.stringify({ id: 'api', name: 'API-01', source: { kind: 'prometheus', station: 'api' } }), `added ${JSON.stringify(api)}`);
+  expect(added.pages.length === 10 && added.pages[5].id === 'api-tape', `pages after adding: ${added.pages.map((p) => p.id).join(', ')}`);
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: join(SNAPSHOTS, 'stations-added.png') });
+
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.st-export')]);
+  const file = join(SNAPSHOTS, download.suggestedFilename());
+  await download.saveAs(file);
+  expect(/^mars-\d{4}-\d{2}-\d{2}\.mars\.json$/.test(download.suggestedFilename()), `export named ${download.suggestedFilename()}`);
+  const exported = JSON.stringify(JSON.parse(readFileSync(file, 'utf8')));
+  expect(exported === JSON.stringify(added), 'the exported file is not the document');
+
+  await page.click('.st-reset');
+  await page.click('.st-reset');
+  const reset = await doc();
+  expect(reset.stations.length === 1 && reset.stations[0].id === 'main' && reset.pages.length === 5, `after reset: ${reset.stations.map((s) => s.id)} / ${reset.pages.length} pages`);
+
+  await page.setInputFiles('.st-cartridge input[type=file]', file);
+  await page.waitForSelector('.st-replace', { timeout: 3000 });
+  expect(/2 stations/i.test(await page.textContent('.st-import-summary')), 'import summary does not count 2 stations');
+  await page.click('.st-replace');
+  expect(JSON.stringify(await doc()) === exported, 'export → reset → import did not give the same document');
+
+  const before = JSON.stringify(await doc());
+  await page.setInputFiles('.st-cartridge input[type=file]', { name: 'broken.mars.json', mimeType: 'application/json', buffer: Buffer.from('{"version": 1, "stations": []}') });
+  await page.waitForSelector('.st-import-summary.bad', { timeout: 3000 });
+  expect(/not loaded/i.test(await page.textContent('.st-import-summary')) && !(await page.$('.st-replace')), 'invalid file not refused');
+  await page.screenshot({ path: join(SNAPSHOTS, 'stations-import-invalid.png') });
+  expect(JSON.stringify(await doc()) === before, 'an invalid import changed the document');
+
+  await context.close();
+  return errors;
+}
+
 async function main() {
   build();
   mkdirSync(SNAPSHOTS, { recursive: true });
@@ -336,6 +436,15 @@ async function main() {
       for (const e of service) console.log(`    ${e}`);
     } else {
       console.log('✓ service panel  page added, radar placed, moved, rebound, saved, reloaded (copy wins, undo kept), reverted, 12 pages; locked E ignored  → snapshots/service-*.png');
+    }
+    checks++;
+    const plate = await checkStationsPlate(browser);
+    if (plate.length) {
+      failed++;
+      console.log('✗ stations plate');
+      for (const e of plate) console.log(`    ${e}`);
+    } else {
+      console.log('✓ stations plate  api discovered, added with pages, live; export → reset → import identical; invalid file refused  → snapshots/stations-*.png');
     }
   } finally {
     await browser.close();

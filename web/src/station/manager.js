@@ -8,6 +8,9 @@ import { createDeviceAlerts } from '../data/prometheus/device-alerts.js';
 // any way is replaced by a new station. A profile is frozen and instruments copy
 // what they need when they are built, so there is nothing to patch in place;
 // panels bound to a replaced station rebuild because the station object changed.
+// The one exception is an entry whose thresholds alone changed: the station is
+// retuned (station.retune), so a Prometheus station keeps its tape instead of
+// reloading it while someone adjusts warn and crit.
 // ctx is { prometheus: base URL } from the document; a Prometheus station is
 // also replaced when it changes.
 //
@@ -24,6 +27,12 @@ import { createDeviceAlerts } from '../data/prometheus/device-alerts.js';
 const RUNNABLE = new Set(['sim', 'poll', 'prometheus']);
 // STALE sits between nominal and degraded: worth a look, not an alarm
 const SEV = { NOMINAL: 0, STALE: 0.5, DEGRADED: 1, INCIDENT: 2 };
+
+// two station entries that differ in nothing but `field`
+function sameBut(field, a, b) {
+  const strip = ({ [field]: _, ...x }) => JSON.stringify(x);
+  return strip(a) === strip(b);
+}
 
 export function createStationManager({ create = createStation, watchAlerts = createDeviceAlerts } = {}) {
   let entries = new Map(); // id → { key, station, off }
@@ -84,6 +93,11 @@ export function createStationManager({ create = createStation, watchAlerts = cre
         next.set(def.id, old);
         continue;
       }
+      if (old?.station.retune && sameBut('thresh', old.def, def) && old.ctx === ctx.prometheus) {
+        old.station.retune(def);
+        next.set(def.id, { ...old, key, def });
+        continue;
+      }
       const station = create(def, ctx);
       // a station whose phase or tables change may have a new store
       let last = station.getStatus?.();
@@ -93,7 +107,7 @@ export function createStationManager({ create = createStation, watchAlerts = cre
         last = st;
       });
       Promise.resolve(station.start()).catch((e) => console.error(`[MARS] station "${def.id}" failed to start`, e));
-      next.set(def.id, { key, station, off });
+      next.set(def.id, { key, def, ctx: ctx.prometheus, station, off });
       changed = true;
     }
     for (const [id, { station, off }] of entries) {

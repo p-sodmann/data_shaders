@@ -53,8 +53,10 @@ def test_metrics_carry_routes_and_stages(client):
     assert 'station="search"' in text
     for name in ("ingress", "auth", "embed", "rank", "egress"):
         assert f'stage="{name}"' in text
-    # /v1/rank doesn't run inference.
-    assert 'stage="infer"' not in text
+    # /v1/rank doesn't run inference. (mars_stage_info lists it anyway: the order is declared.)
+    timed = [line for line in text.splitlines() if line.startswith("mars_stage_duration")]
+    assert not any('stage="infer"' in line for line in timed)
+    assert 'mars_stage_info{order="3",stage="infer",station="search"} 1.0' in text
 
 
 def test_chaos_and_health_are_not_timed(client):

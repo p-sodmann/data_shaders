@@ -9,7 +9,7 @@ import { sel } from './client.js';
 //
 // overrides (from the document's station entry, all optional):
 //   endpoints: [{ route, slo }]   P95 SLO in ms per route
-//   stages:    ['ingress', ...]   pipeline order
+//   stages:    ['ingress', ...]   pipeline order, ahead of the probe's own
 
 const HOUR = 3600;
 const SPAN = 4 * HOUR;
@@ -22,16 +22,31 @@ const SPAN = 4 * HOUR;
 export const SLO_FACTOR = 2;
 export const defaultSlo = (p95, floor = 1) => Math.max(1, floor, Math.round(SLO_FACTOR * p95));
 
-// Without an override, stages are ordered by what their names usually mean
-// (the way in first, the way out last), then alphabetically. The metrics carry
-// no order of their own: exemplars are per request, not per stage.
+// Stage order: the station's `stages` override first (a person set it), then
+// the position the probe exports in mars_stage_info (ADR-0003), then what the
+// names usually mean (the way in first, the way out last), then alphabetically.
+// `probe` maps a stage to its position.
 const FIRST = /^(ingress|gateway|edge|recv|receive|accept|parse|decode|auth)/i;
 const LAST = /^(egress|respond|response|send|encode|serialize|render|write)/i;
 const rank = (s) => (FIRST.test(s) ? (/^auth/i.test(s) ? 1 : 0) : LAST.test(s) ? 3 : 2);
-export function orderStages(names, override = []) {
+export function orderStages(names, override = [], probe = new Map()) {
   const known = override.filter((s) => names.includes(s));
-  const rest = names.filter((s) => !known.includes(s)).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  const pos = (s) => probe.get(s) ?? Infinity;
+  const rest = names
+    .filter((s) => !known.includes(s))
+    .sort((a, b) => (pos(a) === pos(b) ? 0 : pos(a) - pos(b)) || rank(a) - rank(b) || a.localeCompare(b));
   return [...known, ...rest];
+}
+
+// mars_stage_info → Map(stage → position). Several instances of one station
+// may have seen their stages in different orders; the earliest position wins.
+export function probeOrder(result) {
+  const out = new Map();
+  for (const { metric } of result) {
+    const n = +metric.order;
+    if (metric.stage && Number.isFinite(n)) out.set(metric.stage, Math.min(n, out.get(metric.stage) ?? Infinity));
+  }
+  return out;
 }
 
 // Unknown region codes are logged once per session, not on every rediscovery.
@@ -41,7 +56,7 @@ const warned = new Set();
 export async function discover(client, station, { endpoints: epOverride = [], stages: stOverride = [] } = {}, now) {
   const end = Math.floor(now ?? (await client.time()));
   const s = sel(station);
-  const [series, routes, stageNames, regionCodes, p95s, stageMeans] = await Promise.all([
+  const [series, routes, stageNames, regionCodes, p95s, stageMeans, stageInfo] = await Promise.all([
     client.series(`mars:node_up${s}`, end - HOUR, end),
     client.labelValues('route', `mars:endpoint_rps${s}`, end - SPAN, end),
     client.labelValues('stage', `mars:stage_mean_ms${s}`, end - SPAN, end),
@@ -49,6 +64,8 @@ export async function discover(client, station, { endpoints: epOverride = [], st
     // the observed 4-hour P95 of each route, from the raw histogram
     client.query(`histogram_quantile(0.95, sum by (route, le) (increase(mars_http_request_duration_seconds_bucket${s}[4h]))) * 1000`, end),
     client.query(`avg_over_time(mars:stage_mean_ms${s}[4h])`, end),
+    // a probe older than step 09 doesn't export it: then the result is empty
+    client.query(`max by (stage, order) (last_over_time(mars_stage_info${s}[1h]))`, end),
   ]);
 
   const nodes = [...new Set(series.map((m) => m.instance).filter(Boolean))].sort();
@@ -65,7 +82,7 @@ export async function discover(client, station, { endpoints: epOverride = [], st
       : { route, slo: null, observed: null, source: 'auto' };
   });
 
-  const stages = orderStages(stageNames, stOverride);
+  const stages = orderStages(stageNames, stOverride, probeOrder(stageInfo));
   const meanOf = new Map(stageMeans.map((r) => [r.metric.stage, +r.value[1]]));
   const means = stages.map((st) => (Number.isFinite(meanOf.get(st)) ? meanOf.get(st) : 0));
   const total = means.reduce((a, b) => a + b, 0);

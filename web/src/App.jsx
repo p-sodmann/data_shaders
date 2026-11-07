@@ -104,6 +104,9 @@ export default function App({ docStore, manager, device }) {
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [stdOpen, setStdOpen] = useState(false);
+  // the stations plate (step 09), and a cartridge file waiting on it to be imported
+  const [stationsOpen, setStationsOpen] = useState(false);
+  const [cartridge, setCartridge] = useState(null);
   const locked = doc.device.locked && !unlocked;
 
   // a document edit may remove pages under us
@@ -196,6 +199,8 @@ export default function App({ docStore, manager, device }) {
       close() {
         setEditing(false);
         setStdOpen(false);
+        setStationsOpen(false);
+        setCartridge(null);
         setNotice(null);
         if (!urlUnlock) setUnlocked(false);
       },
@@ -320,12 +325,34 @@ export default function App({ docStore, manager, device }) {
     };
   }, [actions, docStore]);
 
+  // A cartridge file dropped on the open device goes to the stations plate's
+  // import summary. Only files: the module bay's own drags carry text, and the
+  // deck handles those. Capture phase, so the deck never sees a file.
+  const files = (e) => editing && e.dataTransfer?.types?.includes('Files');
+  const dropFile = {
+    onDragOverCapture(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    async onDropCapture(e) {
+      if (!files(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+      setStdOpen(false);
+      setStationsOpen(true);
+      setCartridge({ name: file.name, text: await file.text() });
+    },
+  };
+
   const nodes = list.reduce((n, s) => n + s.store.hostCount, 0);
 
   return (
     <EngineContext.Provider value={engine}>
       <div className={`room ${finish}`}>
-        <div className="device" onDoubleClick={toggleFullscreen}>
+        <div className="device" onDoubleClick={toggleFullscreen} {...dropFile}>
           <canvas className="gl" ref={canvasRef} />
 
           <header className="hd">
@@ -384,6 +411,13 @@ export default function App({ docStore, manager, device }) {
                 stdOpen={stdOpen}
                 onStdClose={() => setStdOpen(false)}
                 onPage={setPage}
+                stationsOpen={stationsOpen}
+                onStationsToggle={() => {
+                  setStationsOpen((o) => !o);
+                  setStdOpen(false);
+                }}
+                cartridge={cartridge}
+                onCartridge={setCartridge}
               />
             </Suspense>
           ) : (
@@ -417,7 +451,17 @@ export default function App({ docStore, manager, device }) {
                   <Key k="✕" onClick={pageOps.remove} disabled={pages.length <= 1} className="page-delete">
                     {confirmDelete ? 'Press again' : 'Delete'}
                   </Key>
-                  <Key k="▦" onClick={() => setStdOpen((o) => !o)} active={stdOpen} className="page-std">Std pages</Key>
+                  <Key
+                    k="▦"
+                    onClick={() => {
+                      setStdOpen((o) => !o);
+                      setStationsOpen(false);
+                    }}
+                    active={stdOpen}
+                    className="page-std"
+                  >
+                    Std pages
+                  </Key>
                 </>
               ) : (
                 <>

@@ -3,7 +3,34 @@
 Add questions as you find them, under a heading for their area. Resolve them by moving them
 to **Resolved** with the answer, the date and the step or ADR that settled them.
 
-No open questions right now.
+## Config and stations
+
+- **Should MARS manage Prometheus scrape targets? (step 09)** The stations plate lists what
+  Prometheus already scrapes, and adding a server is still a file in
+  `deploy/prometheus/targets/` (`mars-probe scrape-config`). The plate could write that file
+  (an "Add server" field with host:port) through the same upload handler as the step 12 config
+  PUT, behind `MARS_BASIC_AUTH`. That gives a browser write access to Prometheus's
+  configuration, so it needs a decision on whether that is wanted.
+- **Route SLO, stage order, name and home edits restart the station (step 09).** Only
+  thresholds retune a running station. The other edits replace it, and a Prometheus station
+  reloads its tape (about 3 s of TAPE LOAD) after each committed field. Fine for occasional
+  edits; worth a retune path if people tune route SLOs one after another.
+
+## Display
+
+- **The footer runs past the housing with long page names (seen in step 09).** With the five
+  standard pages for two stations (10 pages) the key row is wider than the device at
+  1920 × 1080, in view mode and more so in edit mode, so the device is cut off at the sides.
+  Ten short names (`X7`…) still fit. Not caused by the stations plate; the 08 handoff noted
+  the edit-mode key row overflows more. Shorten the
+  page keys (number only above N pages?) or let the row scroll.
+
+## Deploy
+
+- **Images can't be built in the Podman VM here (steps 07–09).** `npm ci` fails in the
+  `mars-web` build (step 07), and in step 09 the `mars-demo` build failed because the VM had no
+  DNS (`uv sync` couldn't reach PyPI). Live checks ran on files copied into the running
+  containers. A `podman machine` restart or real Docker (the step 12 CI) should settle it.
 
 ## Resolved
 
@@ -28,7 +55,9 @@ gets built.
 - **Stage order isn't in the metrics (step 07):** the probe exports `mars_stage_info{stage,
   order}`, with the order from `instrument(app, stages=[…])`, else the order in which the
   process first saw each stage (an ADR-0003 change). The web side uses it first, then the `stages` override, then the name heuristic.
-  → step 09. 2026-11-07.
+  → step 09. 2026-11-07. *Built in step 09 with two changes (ADR-0003 amended): the `stages`
+  override goes first, because it is what the stations plate's pipeline editor writes; and
+  "first saw" is first entered, so a stage comes before the stages nested in it.*
 - **External alerts without a `station` label (step 07):** they light a device-level
   `EXT ALERTS` lamp that isn't tied to a station, and log as `EXT ALERT … FIRING` without a
   station. → step 08b. 2026-11-07.
@@ -55,7 +84,9 @@ gets built.
   The step 08 editor's save calls it once it exists. → step 12.
 - **Changing a station recreates it (step 06):** accepted. Any edit to a station entry rebuilds
   the station. Prometheus stations refill from Prometheus, and edits are rare, so thresholds
-  stay frozen in the profile. 2026-11-06.
+  stay frozen in the profile. 2026-11-06. *Changed in step 09: a change to `thresh` alone
+  retunes the running station and keeps its tape (the step's criterion "threshold edits take
+  effect live without losing the tape"). Everything else still recreates it. 2026-11-07.*
 - **Long station names in the System tube (step 06):** the tube shows the name cut to about
   12 characters, and module headers keep the full name. The schema limit stays at 24.
   → follow-up to step 06.

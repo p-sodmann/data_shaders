@@ -17,6 +17,7 @@ EXPECTED = {
     "mars_http_requests_in_flight_limit": {"station"},
     "mars_process_cpu_seconds": {"station"},  # family name; the sample is ..._total
     "mars_stage_duration_seconds": {"station", "stage"},
+    "mars_stage_info": {"station", "stage", "order"},
     "mars_signal": {"station", "signal"},
 }
 OM = "application/openmetrics-text; version=1.0.0; charset=utf-8"
