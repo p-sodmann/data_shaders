@@ -73,7 +73,7 @@ The example's thresholds (warn 1 ms, crit 3 ms, memory stall 2 % / 10 %, saturat
 |---|---|---|---|
 | `MARS_STATION` | `--station` | `fleet` | lower case, digits, dashes; not the name of a service station |
 | `MARS_AGENT_PORT` | `--port` | `9110` | |
-| `MARS_AGENT_HOST` | `--host` | `0.0.0.0` | |
+| `MARS_AGENT_HOST` | `--host` | every address | IPv6 and IPv4 together (IPv4 alone where IPv6 is off); `0.0.0.0` is IPv4 only |
 | `MARS_ROOTFS` | `--rootfs` | `/` | the compose file sets `/host` |
 | `MARS_PROC` | `--proc` | `/proc` | |
 | `MARS_IGNORE_INTERFACES` | `--ignore-interfaces` | loopback, `veth*`, `docker*`, `br-*`, … | regex of interfaces left out of the packet count |

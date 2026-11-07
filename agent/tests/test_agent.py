@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import socket
 import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -10,7 +11,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from mars_agent import __version__
-from mars_agent.cli import handler, parse
+from mars_agent.cli import handler, parse, serve
 from mars_agent.exposition import render
 from mars_agent.host import DEFAULT_IGNORE, Host, net_packets, schedstat
 
@@ -127,5 +128,33 @@ def test_server(proc, tmp_path):
             assert resp.read() == b"ok\n"
         with pytest.raises(urllib.error.HTTPError):
             urllib.request.urlopen(f"{base}/nope")
+    finally:
+        server.shutdown()
+
+
+def test_metrics_path_with_slash_or_query(proc, tmp_path):
+    server = serve("127.0.0.1", 0, handler(Host(str(proc), str(tmp_path)), "f"))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        for path in ("/metrics/", "/metrics?x=1", "/healthz/"):
+            with urllib.request.urlopen(base + path) as resp:
+                assert resp.status == 200, path
+    finally:
+        server.shutdown()
+
+
+@pytest.mark.skipif(not socket.has_ipv6, reason="no IPv6")
+def test_listens_on_ipv6_and_ipv4(proc, tmp_path):
+    server = serve("", 0, handler(Host(str(proc), str(tmp_path)), "f"))
+    if server.address_family != socket.AF_INET6:
+        server.server_close()
+        pytest.skip("this machine has IPv6 switched off")
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    try:
+        for url in (f"http://127.0.0.1:{port}/healthz", f"http://[::1]:{port}/healthz"):
+            with urllib.request.urlopen(url) as resp:
+                assert resp.read() == b"ok\n", url
     finally:
         server.shutdown()

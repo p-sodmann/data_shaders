@@ -75,6 +75,11 @@ shows a fleet and its individual nodes.
 - `rate(…[1m])` 20 s after a series starts reads about a third of the true rate (it only
   extrapolates part way into the empty window), so the `rate1m` promtool case is read at 80 s.
 - podman-compose doesn't recreate a container when its image changes; `--force-recreate` does.
+- Found after the push: the agent listened on IPv4 only and answered `/metrics/` with 404. In
+  the alpine container `localhost` is `::1` first and busybox `wget` doesn't fall back, so the
+  demo agent's health check failed (Prometheus, using `demo-host`, still scraped it). The agent
+  now listens on IPv6 and IPv4 together (IPv4 alone where IPv6 is off) and treats `/metrics/`
+  and `/metrics?…` as `/metrics`; two tests cover it.
 
 ### Verification
 
