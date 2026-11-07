@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "device": {
+    "finish": "graphite",
+    "fps": 60,
+    "dpr": 2,
+    "cycle": 0,
+    "locked": false
+  },
+  "stations": [
+    {
+      "id": "inference",
+      "name": "INFERENCE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 8,
+        "seed": 1
+      }
+    },
+    {
+      "id": "search",
+      "name": "SEARCH-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 12,
+        "seed": 2
+      },
+      "thresh": {
+        "warn": 40,
+        "crit": 55,
+        "max": 80
+      }
+    },
+    {
+      "id": "embed",
+      "name": "EMBED-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 16,
+        "seed": 3
+      },
+      "thresh": {
+        "warn": 15,
+        "crit": 22,
+        "max": 40
+      }
+    },
+    {
+      "id": "rank",
+      "name": "RANK-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 20,
+        "seed": 4
+      }
+    },
+    {
+      "id": "gateway",
+      "name": "GATEWAY-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 8,
+        "seed": 5
+      },
+      "thresh": {
+        "warn": 40,
+        "crit": 55,
+        "max": 80
+      }
+    },
+    {
+      "id": "auth",
+      "name": "AUTH-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 12,
+        "seed": 6
+      },
+      "thresh": {
+        "warn": 15,
+        "crit": 22,
+        "max": 40
+      }
+    },
+    {
+      "id": "cache",
+      "name": "CACHE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 16,
+        "seed": 7
+      }
+    },
+    {
+      "id": "store",
+      "name": "STORE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 20,
+        "seed": 8
+      },
+      "thresh": {
+        "warn": 40,
+        "crit": 55,
+        "max": 80
+      }
+    },
+    {
+      "id": "queue",
+      "name": "QUEUE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 8,
+        "seed": 9
+      },
+      "thresh": {
+        "warn": 15,
+        "crit": 22,
+        "max": 40
+      }
+    },
+    {
+      "id": "batch",
+      "name": "BATCH-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 12,
+        "seed": 10
+      }
+    },
+    {
+      "id": "stream",
+      "name": "STREAM-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 16,
+        "seed": 11
+      },
+      "thresh": {
+        "warn": 40,
+        "crit": 55,
+        "max": 80
+      }
+    },
+    {
+      "id": "tokenize",
+      "name": "TOKENIZE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 20,
+        "seed": 12
+      },
+      "thresh": {
+        "warn": 15,
+        "crit": 22,
+        "max": 40
+      }
+    },
+    {
+      "id": "feedback",
+      "name": "FEEDBACK-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 8,
+        "seed": 13
+      }
+    },
+    {
+      "id": "models",
+      "name": "MODELS-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 12,
+        "seed": 14
+      },
+      "thresh": {
+        "warn": 40,
+        "crit": 55,
+        "max": 80
+      }
+    },
+    {
+      "id": "index",
+      "name": "INDEX-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 16,
+        "seed": 15
+      },
+      "thresh": {
+        "warn": 15,
+        "crit": 22,
+        "max": 40
+      }
+    },
+    {
+      "id": "edge",
+      "name": "EDGE-01",
+      "source": {
+        "kind": "sim",
+        "hosts": 20,
+        "seed": 16
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "fleet",
+      "name": "Fleet",
+      "panels": [
+        {
+          "id": "board",
+          "type": "stationBoard",
+          "x": 0,
+          "y": 0,
+          "w": 7,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "radar",
+          "type": "stationRadar",
+          "x": 7,
+          "y": 0,
+          "w": 5,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "strands",
+          "type": "stationStrands",
+          "x": 0,
+          "y": 4,
+          "w": 7,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "log",
+          "type": "stationLog",
+          "x": 7,
+          "y": 6,
+          "w": 5,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "twin",
+      "name": "Twin",
+      "panels": [
+        {
+          "id": "t1",
+          "type": "tape",
+          "station": "inference",
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "t2",
+          "type": "tape",
+          "station": "search",
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "log",
+          "type": "log",
+          "station": "*",
+          "x": 0,
+          "y": 6,
+          "w": 12,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    }
+  ]
+}

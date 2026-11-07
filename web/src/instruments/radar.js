@@ -9,15 +9,15 @@ import { routeLabel } from '../data/telemetry.js';
 // faint echoes behind a contact show which way it is heading. A contact with
 // too little traffic to judge (LOW) is drawn dim and keeps its last range.
 
-const TAU = Math.PI * 2;
-const PERIOD = 6; // seconds per turn
-const ECHOES = 7;
+export const TAU = Math.PI * 2;
+export const PERIOD = 6; // seconds per turn
+export const ECHOES = 7;
 const WARN_P = 0.75;
 
 // pressure (fraction of the limit) to radius (fraction of the scope): linear
 // down to the SLO ring, then compressed so contacts past it keep their order
-const rangeOf = (p) => (p <= 1 ? 1 - 0.8 * Math.max(0, p) : Math.max(0.03, 0.2 * Math.exp(-(p - 1) * 0.8)));
-const LABEL_MIN = 0.42; // labels of close contacts stay outside the inner rings
+export const rangeOf = (p) => (p <= 1 ? 1 - 0.8 * Math.max(0, p) : Math.max(0.03, 0.2 * Math.exp(-(p - 1) * 0.8)));
+export const LABEL_MIN = 0.42; // labels of close contacts stay outside the inner rings
 const RINGS = [
   [1, '0'],
   [0.8, '25'],
@@ -25,6 +25,57 @@ const RINGS = [
   [rangeOf(WARN_P), '75'],
   [rangeOf(1), 'SLO'],
 ];
+
+// The scope itself, shared with the cross-station radar (stationradar.js):
+// range rings (warn and SLO in their colours), the bearing scale and the beam.
+// `labels` names the five rings from the rim in. Returns the geometry contacts
+// are placed with.
+export function drawScope(v, f, labels = RINGS.map(([, l]) => l)) {
+  const W = v.w, H = v.h;
+  const now = f.now / 1000;
+  const side = W - 2 * Math.min(H * 0.5, W * 0.5) > 200; // room for a readout column
+  const R = Math.max(20, Math.min(H * 0.5 - 22, (side ? W - 190 : W) * 0.5 - 22));
+  const cx = side ? R + 26 : W / 2, cy = H / 2;
+  const at = (b, r) => [cx + Math.sin(b) * R * r, cy - Math.cos(b) * R * r];
+  const turn = now / PERIOD;
+  const sweep = (turn % 1) * TAU;
+
+  // range rings, the warn and SLO rings in their colours
+  RINGS.forEach(([r], k) => {
+    const label = labels[k];
+    const c = k === 4 ? PH.crit : k === 3 ? PH.warn : PH.ok;
+    const steps = Math.max(24, Math.round(r * R * 0.9));
+    for (let i = 0; i < steps; i++) {
+      const [x, y] = at((i / steps) * TAU, r);
+      v.dot(x, y, c, k === 0 ? 0.28 : k >= 3 ? 0.3 : 0.14, 0.5);
+    }
+    const [lx, ly] = at(TAU * 0.0, r);
+    v.text(lx + 3, ly + 2, label, c, k >= 3 ? 0.55 : 0.32, 1.3);
+  });
+  // bearing scale
+  for (let d = 0; d < 360; d += 5) {
+    const b = (d / 360) * TAU, long = d % 30 === 0;
+    const [x0, y0] = at(b, 1);
+    const [x1, y1] = at(b, 1 + (long ? 7 : 3) / R);
+    v.line(x0, y0, x1, y1, PH.ok, long ? 0.45 : 0.22, 0.45);
+    if (long) {
+      const s = String(d).padStart(3, '0');
+      const [tx, ty] = at(b, 1 + 15 / R);
+      v.text(tx - v.textWidth(s, 1.3) / 2, ty - 4.5, s, PH.ok, 0.4, 1.3);
+    }
+  }
+  for (let k = 0; k < 4; k++) {
+    const [x, y] = at((k * TAU) / 4, 1);
+    v.line(cx, cy, x, y, PH.ok, 0.05, 0.45);
+  }
+
+  // beam with its afterglow wedge
+  for (let j = 0; j < 36; j++) {
+    const [x, y] = at(sweep - j * 0.022, 1);
+    v.line(cx, cy, x, y, PH.ok, (j ? 0.32 : 0.9) * Math.exp(-j / 9), j ? 0.8 : 0.6);
+  }
+  return { W, H, now, turn, at, cx, cy, R, side };
+}
 
 export function createRadar(station, options = {}) {
   const { store } = station;
@@ -36,48 +87,7 @@ export function createRadar(station, options = {}) {
   return {
     crt: { curve: 0.035, scan: 0.75, bloom: 1.1, decay: 0.9 },
     render(gl, _state, f, v) {
-      const W = v.w, H = v.h;
-      const now = f.now / 1000;
-      const side = W - 2 * Math.min(H * 0.5, W * 0.5) > 200; // room for a readout column
-      const R = Math.max(20, Math.min(H * 0.5 - 22, (side ? W - 190 : W) * 0.5 - 22));
-      const cx = side ? R + 26 : W / 2, cy = H / 2;
-      const at = (b, r) => [cx + Math.sin(b) * R * r, cy - Math.cos(b) * R * r];
-      const turn = now / PERIOD;
-      const sweep = (turn % 1) * TAU;
-
-      // range rings, the warn and SLO rings in their colours
-      RINGS.forEach(([r, label], k) => {
-        const c = k === 4 ? PH.crit : k === 3 ? PH.warn : PH.ok;
-        const steps = Math.max(24, Math.round(r * R * 0.9));
-        for (let i = 0; i < steps; i++) {
-          const [x, y] = at((i / steps) * TAU, r);
-          v.dot(x, y, c, k === 0 ? 0.28 : k >= 3 ? 0.3 : 0.14, 0.5);
-        }
-        const [lx, ly] = at(TAU * 0.0, r);
-        v.text(lx + 3, ly + 2, label, c, k >= 3 ? 0.55 : 0.32, 1.3);
-      });
-      // bearing scale
-      for (let d = 0; d < 360; d += 5) {
-        const b = (d / 360) * TAU, long = d % 30 === 0;
-        const [x0, y0] = at(b, 1);
-        const [x1, y1] = at(b, 1 + (long ? 7 : 3) / R);
-        v.line(x0, y0, x1, y1, PH.ok, long ? 0.45 : 0.22, 0.45);
-        if (long) {
-          const s = String(d).padStart(3, '0');
-          const [tx, ty] = at(b, 1 + 15 / R);
-          v.text(tx - v.textWidth(s, 1.3) / 2, ty - 4.5, s, PH.ok, 0.4, 1.3);
-        }
-      }
-      for (let k = 0; k < 4; k++) {
-        const [x, y] = at((k * TAU) / 4, 1);
-        v.line(cx, cy, x, y, PH.ok, 0.05, 0.45);
-      }
-
-      // beam with its afterglow wedge
-      for (let j = 0; j < 36; j++) {
-        const [x, y] = at(sweep - j * 0.022, 1);
-        v.line(cx, cy, x, y, PH.ok, (j ? 0.32 : 0.9) * Math.exp(-j / 9), j ? 0.8 : 0.6);
-      }
+      const { W, H, now, turn, at, cx, cy, R, side } = drawScope(v, f);
 
       // contacts
       const eps = store.endpoints;

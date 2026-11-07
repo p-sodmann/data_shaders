@@ -645,6 +645,7 @@ body.idle, body.idle * { cursor: none !important; }
 .bay-list::-webkit-scrollbar { width: 0.6vmin; }
 .bay-list::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 99px; }
 .bay-list::-webkit-scrollbar-track { background: transparent; }
+.bay-group { grid-column: 1 / -1; padding: 1vmin 0 0.2vmin; border-top: 1px solid var(--rule); margin-top: 0.6vmin; }
 .faceplate {
   position: relative;
   display: grid;

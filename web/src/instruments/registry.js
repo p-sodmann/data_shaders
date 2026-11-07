@@ -15,6 +15,10 @@ import { createCorrelator } from './correlator.js';
 import { createWeekDial } from './weekdial.js';
 import { createHeatmap } from './heatmap.js';
 import { createBudget, createBurnRate } from './budget.js';
+import { createStationBoard } from './board.js';
+import { createStationRadar } from './stationradar.js';
+import { createStationStrands } from './strands.js';
+import { stationCount } from './stations.js';
 import { TapeOverlay } from './overlays/tape.jsx';
 import { WaterfallOverlay } from './overlays/waterfall.jsx';
 import { DialOverlay } from './overlays/dial.jsx';
@@ -30,7 +34,10 @@ import { HeatOverlay } from './overlays/heat.jsx';
 //   scope     'station' (built from one station) | 'device' (cross-station, step 10)
 //             | 'either' (one station, or every station when the panel is bound to '*')
 //   create    (station, options) => instrument (see gl/engine.js for the interface);
-//             device and '*' panels get the device instead: { stations } (read-only, live)
+//             device and '*' panels get the device instead: { stations } (read-only, live).
+//             A device instrument is built once and reads `device.stations` and each
+//             station's `store` every frame, so stations that come, go, rebuild or
+//             retune need no rebuild (instruments/stations.js)
 //   overlay   optional React component rendered inside the glass, gets { inst, station, snap, options }
 //   needs     station tables the instrument reads; step 07 uses it for discovered stations.
 //             'signal' (the page 4 analyser) is held only while such a panel is mounted
@@ -165,6 +172,42 @@ export const REGISTRY = Object.freeze({
   }),
   burn: entry({ name: 'Burn rate', reads: 'How fast the budget burns, 24 h', meta: '× sustainable · 24 h · multi-window alerts', create: createBurnRate, needs: ['almanac'], minW: 3, defaultSize: [5, 2] }),
   logbook: entry({ name: 'Logbook', reads: 'Incidents of the last 30 days', meta: 'Incidents · 30 d', create: createLogbook, needs: ['almanac'], minW: 3, defaultSize: [4, 2] }),
+
+  // cross-station (step 10): every station at once, on the device
+  stationBoard: entry({
+    name: 'Station board',
+    reads: 'One lamp per station: fill is saturation, colour is state',
+    meta: (a) => `${stationCount(a)} · fill = saturation`,
+    scope: 'device',
+    create: createStationBoard,
+    minW: 3, defaultSize: [7, 4],
+    options: { numerals: { type: 'boolean', default: true, label: 'P50 and RPS' } },
+  }),
+  stationRadar: entry({
+    name: 'Station radar',
+    reads: 'Stations closing on their crit limits, as range',
+    meta: (a) => `${stationCount(a)} · range = headroom to crit`,
+    scope: 'device',
+    create: createStationRadar,
+    minW: 3, minH: 3, defaultSize: [5, 6],
+  }),
+  stationStrands: entry({
+    name: 'Station strands',
+    reads: "Every station's P50 as a share of its crit, 3 min",
+    meta: (a) => `${stationCount(a)} · P50 / crit · 3 min`,
+    scope: 'device',
+    create: createStationStrands,
+    minW: 4, defaultSize: [7, 4],
+  }),
+  // the event log bound to '*' (step 06), offered with the cross-station group
+  stationLog: entry({
+    name: 'Station log',
+    reads: "Every station's events on one teletype",
+    meta: 'Teletype · all stations',
+    scope: 'device',
+    create: createLog,
+    minW: 3, defaultSize: [5, 2],
+  }),
 });
 
 // Instruments built into the housing (header), not mountable as panels.

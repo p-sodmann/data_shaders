@@ -150,7 +150,7 @@ export default function App({ docStore, manager, device }) {
       e = createEngine(canvasRef.current, { fps: device.fps, dpr: device.dpr });
       setEngine(e);
       // debug hook: live screens and GPU objects, read by the smoke test's page-switch check
-      window.__mars = Object.assign(window.__mars ?? {}, { stats: e.stats });
+      window.__mars = Object.assign(window.__mars ?? {}, { stats: e.stats, frames: e.frames });
     } catch (err) {
       setFailure(String(err?.message || err));
     }

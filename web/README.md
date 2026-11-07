@@ -77,6 +77,23 @@ The device's long memory. One record per minute (latency, errors, throughput, lo
 
 The SLO target, window and alert rates are the station profile's `slo` and `burnAlerts` ([src/station/profile.js](src/station/profile.js)).
 
+### Cross-station instruments
+
+These show every station of the document at once (registry scope `device`), so a panel
+carries no `station`. They follow stations that are added, removed, rebuilt or retuned
+without being rebuilt. The Docker document has them on page 7, *Fleet*; the module bay lists
+them last, under *All stations at once*.
+
+| Type | Instrument | Reads as |
+|---|---|---|
+| `stationBoard` | **Station board** | The nodes lamp bank with one large lamp per station, carrying its name and, below it, P50 and RPS (option *P50 and RPS*). The fill is saturation and the colour is the station's state (warn breathes, crit blinks). A STALE station, or one still loading its tape, is dark and struck through. |
+| `stationRadar` | **Station radar** | The proximity scope with one contact per station. Its bearing is fixed by the station's place in the document; its range is headroom: the worst of P50 against `crit`, error rate against `errCrit` and saturation against `satCrit`, so the orange ring means "at a crit limit". Colour is the station's state. A STALE station keeps its last position, crossed out. At most five contacts are named (worst state first, then least headroom). |
+| `stationStrands` | **Station strands** | One P50 strand per station over the last 3 minutes, divided by the station's own `crit`, so stations on different scales are comparable; the orange line is crit for all of them. Strands over their warn line are named at the tip. On the right, the five stations nearest crit with their current share of it. With many stations a segment spans several seconds and shows their highest P50. |
+| `stationLog` | **Station log** | The event log of every station on one teletype, each line with its station's name. The same as a `log` panel bound to `*`. |
+
+[public/examples/sixteen-stations.json](public/examples/sixteen-stations.json) runs the Fleet
+page on 16 simulated stations (`?config=/examples/sixteen-stations.json`).
+
 Colour is a signal, never decoration: mint is nominal, amber is warn, orange is critical.
 
 ## Keys
@@ -315,8 +332,8 @@ holds it. Each station keeps its almanac in IndexedDB under `station:<id>:<sourc
 
 Instruments come in two kinds:
 
-- **Fragment instruments** (tape, meter, nodes, dot-matrix panels) shade every pixel from uniforms and data textures.
-- **Vector instruments** (orbit, fleet, pipeline, slices, proximity, ground track, spectrum, X‑Y scope, correlator, budget, burn rate) draw glowing beam strokes with the painter in [src/gl/vector.js](src/gl/vector.js): instanced gaussian line segments blended additively, plus a small 3D camera and wireframe solids in [src/instruments/space.js](src/instruments/space.js).
+- **Fragment instruments** (tape, meter, nodes, station board, dot-matrix panels) shade every pixel from uniforms and data textures.
+- **Vector instruments** (orbit, fleet, pipeline, slices, proximity, ground track, spectrum, X‑Y scope, correlator, budget, burn rate, station radar, station strands) draw glowing beam strokes with the painter in [src/gl/vector.js](src/gl/vector.js): instanced gaussian line segments blended additively, plus a small 3D camera and wireframe solids in [src/instruments/space.js](src/instruments/space.js).
 
 Every screen runs the same pipeline: **instrument scene → phosphor persistence
 (feedback buffer) → quarter-res bloom → tube composite** (curvature, scanlines,
@@ -327,7 +344,8 @@ Pages are data. A page is `{ id, name, panels: [{ id, type, station, x, y, w, h,
 placed on a grid of 12 columns × 8 rows that fills the deck. `PageView` builds each panel's
 instrument when the page mounts and drops it when the page goes away. The engine frees the
 screen's GPU objects then, and `window.__mars.stats()` shows the live counts (screens,
-textures, framebuffers, programs, buffers). A panel whose type isn't in the registry shows
+textures, framebuffers, programs, buffers), and `window.__mars.frames()` the mean and 95th
+percentile CPU time per frame over the last 240 frames. A panel whose type isn't in the registry shows
 `NO MODULE`. A panel whose station doesn't exist shows `NO SIGNAL`. Module numbers run on in
 panel order across all pages.
 
@@ -354,6 +372,13 @@ export const sweep = {
   },
 };
 ```
+
+An instrument with registry scope `device` is built on the device instead of a station:
+`create(device, options)`, where `device.stations` is the current list. It is built once, so it
+reads `device.stations` and each station's `store` (thresholds: `store.profile.thresh`) every
+frame rather than keeping copies; [src/instruments/stations.js](src/instruments/stations.js)
+has the shared readings (lamp code, pressure, numerals). Text drawn with the vector painter
+costs one beam instance per glyph dot, so cap how many stations get labels.
 
 Then register it in [src/instruments/registry.js](src/instruments/registry.js):
 

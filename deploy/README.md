@@ -25,8 +25,9 @@ curl -s localhost:8080/prom/api/v1/query --data-urlencode 'query=mars:throughput
 ```
 
 The display loads [config/mars.json](config/mars.json): both demo stations read from Prometheus,
-the five standard pages for `api` and a mixed page 6 for both. On a reload the tape is filled
-from Prometheus for as long as the stack has run (up to 4 h).
+the five standard pages for `api`, a mixed page 6 for both, and page 7 *Fleet* with the
+cross-station instruments (step 10). On a reload the tape is filled from Prometheus for as long
+as the stack has run (up to 4 h).
 
 
 Things to try:

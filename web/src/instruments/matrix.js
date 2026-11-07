@@ -52,12 +52,15 @@ void main(){
 }
 `;
 
-function gridFor(n, aspect) {
+// Columns and rows for n lamps on a face of this aspect (w / h), with lamps
+// as close to `cell` (w / h) as the count allows. The station board (step 10)
+// wants wider lamps than the nodes grid, for the names.
+export function gridFor(n, aspect, cell = 0.8) {
   let best = [n, 1], score = Infinity;
   for (let r = 1; r <= n; r++) {
     const c = Math.ceil(n / r);
     const cellAspect = (aspect * r) / c;
-    const sc = Math.abs(Math.log(cellAspect / 0.8)) + (c * r - n) * 0.04;
+    const sc = Math.abs(Math.log(cellAspect / cell)) + (c * r - n) * 0.04;
     if (sc < score) {
       score = sc;
       best = [c, r];

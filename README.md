@@ -55,8 +55,9 @@ Without `--profile demo` only MARS and Prometheus start, for your own servers. A
 server, ports and troubleshooting are in [deploy/README.md](deploy/README.md).
 
 The display reads both demo stations from Prometheus ([deploy/config/mars.json](deploy/config/mars.json)):
-pages 1–5 are the standard pages for `api`, page 6 shows both stations. Without Docker,
-`cd web && npm run dev` runs on the built-in simulator.
+pages 1–5 are the standard pages for `api`, page 6 shows both stations, and page 7 (*Fleet*)
+shows every station at once. Without Docker, `cd web && npm run dev` runs on the built-in
+simulator.
 
 ## Docs
 

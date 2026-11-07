@@ -43,7 +43,8 @@ export function createStationManager({ create = createStation, watchAlerts = cre
 
   // The device as cross-station instruments see it: always the current list.
   // One object for the whole session, so instruments built on it never need
-  // rebuilding when stations come and go.
+  // rebuilding when stations come and go. subscribe / getSnapshot let a module
+  // caption that counts stations follow the list (ui/PageView.jsx).
   const device = Object.freeze({
     get stations() {
       return snapshot.list;
@@ -51,7 +52,13 @@ export function createStationManager({ create = createStation, watchAlerts = cre
     get alerts() {
       return alerts;
     },
+    subscribe,
+    getSnapshot: () => snapshot,
   });
+  function subscribe(fn) {
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }
 
   // one watch per Prometheus URL, only while some station reads from it
   function syncAlerts(defs, ctx) {
@@ -130,10 +137,7 @@ export function createStationManager({ create = createStation, watchAlerts = cre
     getSnapshot: () => snapshot,
     get: (id) => snapshot.byId[id],
     list: () => snapshot.list,
-    subscribe(fn) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
+    subscribe,
     dispose() {
       stopAlerts();
       for (const { station, off } of entries.values()) {

@@ -25,6 +25,18 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   the edit-mode key row overflows more. Shorten the
   page keys (number only above N pages?) or let the row scroll.
 
+- **Fleet page frame time, 2 against 16 stations (step 10).** Under SwiftShader the Fleet
+  page's frame interval is 12–22 % longer with 16 stations than with 2 (flat from 5 stations
+  on). The CPU time per frame is the same. The difference is beam text: the radar names up to 5
+  contacts and the strands list up to 5 stations, and 2 stations fill only 2 of each. Needs a
+  measurement on a real GPU (`__mars.frames()` and the rAF interval). If it is still over
+  10 % there, choose between fewer named stations and cheaper text in the vector painter (one
+  instance per glyph dot today).
+- **`stationLog` and `log` bound to `*` are the same instrument (step 10).** The step asked for
+  the all-stations log in the cross-station bay group, so it is a registry entry of its own,
+  while `log` keeps its `*` binding (the Twin page uses it). Keep both, or migrate `log` + `*`
+  to `stationLog` and drop scope `either`?
+
 ## Deploy
 
 - **Images can't be built in the Podman VM here (steps 07–09).** `npm ci` fails in the

@@ -1,7 +1,8 @@
 // Headless smoke test: build, serve the build with `vite preview`, open every page in Chromium
 // and fail on console errors, page errors or missing module headers: the built-in default
-// document, the two-station example (?config=) and an old kiosk URL (legacy parameters, v0
-// migration). Then switch pages 50 times and fail if the engine's GPU object count grew, and run
+// document, the two-station example (?config=), an old kiosk URL (legacy parameters, v0
+// migration) and the sixteen-station Fleet page (step 10). Then switch pages 50 times and fail
+// if the engine's GPU object count grew, and run
 // a scripted service-panel session (step 08) and a stations-plate session against a recorded
 // Prometheus (step 09). Screenshots go to snapshots/ so a person can compare them; nothing here
 // diffs pixels.
@@ -133,6 +134,20 @@ async function twoStationExtras(page) {
   for (const k of ['station:main:SIMULATED', 'station:search:SIMULATED']) {
     if (!keys.includes(k)) errors.push(`almanac record "${k}" missing (have ${keys.join(', ')})`);
   }
+  return errors;
+}
+
+// Sixteen stations on the Fleet page (step 10): the cross-station modules count them, and
+// follow a station that is removed while the page is up.
+const SIXTEEN = '?config=/examples/sixteen-stations.json';
+async function sixteenExtras(page) {
+  const errors = [];
+  const metas = await text(page, '.mod-head .meta');
+  if (metas.filter((m) => m.startsWith('16 stations')).length !== 3) errors.push(`fleet captions: ${metas.join(' | ')}`);
+  await page.evaluate(() => window.__mars.setDoc((d) => ({ ...d, stations: d.stations.filter((s) => s.id !== 'edge') })));
+  await page.waitForTimeout(500);
+  const after = await text(page, '.mod-head .meta');
+  if (after.filter((m) => m.startsWith('15 stations')).length !== 3) errors.push(`after removing a station: ${after.join(' | ')}`);
   return errors;
 }
 
@@ -407,6 +422,7 @@ async function main() {
         extra: n === '1' ? twoStationExtras : null,
       })),
       { label: 'legacy URL', query: `${LEGACY}&page=1`, expected: PAGES[1], shot: 'legacy-url.png', extra: legacyExtras },
+      { label: 'sixteen stations, Fleet', query: `${SIXTEEN}&page=1`, expected: ['01', '02', '03', '04'], shot: 'sixteen-fleet.png', extra: sixteenExtras },
     ];
     for (const run of runs) {
       const errors = await checkPage(browser, run.query, run.expected, run.shot, run.extra);

@@ -109,8 +109,9 @@ const noStore = { subscribe: () => () => {}, getSnapshot: () => null };
 
 function LivePanel({ panel, def, station, named, num, style, generation }) {
   // Live captions and overlays follow the station's (throttled) snapshot. The
-  // device has no store of its own; its instruments draw from the stations.
-  const store = station.store ?? noStore;
+  // device has no store of its own; its instruments draw from the stations, and
+  // its captions follow the station list.
+  const store = station.store ?? (station.stations && station.subscribe ? station : noStore);
   const snap = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const holdsSignal = def.needs.includes('signal') && !!station.retainSignal;
   useEffect(() => (holdsSignal ? station.retainSignal() : undefined), [holdsSignal, station]);

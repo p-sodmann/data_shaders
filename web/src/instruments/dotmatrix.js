@@ -25,7 +25,8 @@ void main(){
 }
 `;
 
-function glyphColumns(ch, prop) {
+// a glyph's dot columns (bit 0 = top row); proportional text drops empty columns
+export function glyphColumns(ch, prop) {
   const g = FONT[ch] ?? FONT['?'];
   if (prop && ch === ' ') return [0, 0, 0];
   if (prop && NARROW.has(ch)) {

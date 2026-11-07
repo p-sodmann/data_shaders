@@ -457,6 +457,48 @@
           "options": {}
         }
       ]
+    },
+    {
+      "id": "fleet",
+      "name": "Fleet",
+      "panels": [
+        {
+          "id": "board",
+          "type": "stationBoard",
+          "x": 0,
+          "y": 0,
+          "w": 7,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "radar",
+          "type": "stationRadar",
+          "x": 7,
+          "y": 0,
+          "w": 5,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "strands",
+          "type": "stationStrands",
+          "x": 0,
+          "y": 4,
+          "w": 7,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "log",
+          "type": "stationLog",
+          "x": 7,
+          "y": 6,
+          "w": 5,
+          "h": 2,
+          "options": {}
+        }
+      ]
     }
   ]
 }

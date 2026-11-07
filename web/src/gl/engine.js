@@ -263,7 +263,13 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
 
     const f = { now, dt, time: ((now - t0) / 1000) % 3600 };
     for (const s of screens) render(s, f, cr);
+    timing[timingAt++ % TIMING_N] = performance.now() - now;
   }
+  // CPU time of the last frames (instruments and GL calls, not the GPU), for
+  // the debug handle: step 10 compares 2 stations against 16 with it
+  const TIMING_N = 240;
+  const timing = new Float64Array(TIMING_N);
+  let timingAt = 0;
   raf = requestAnimationFrame(loop);
 
   // A display that runs for weeks will eventually lose its context (driver
@@ -310,6 +316,12 @@ export function createEngine(canvas, { fps = 60, dpr: dprCap = 2 } = {}) {
     },
     // debug counter: a page switch that leaks shows up as growing numbers here
     stats: () => ({ screens: screens.size, ...live }),
+    // mean and 95th percentile CPU ms per frame over the last 240 frames
+    frames() {
+      const n = Math.min(timingAt, TIMING_N);
+      const v = [...timing.slice(0, n)].sort((a, b) => a - b);
+      return { frames: n, mean: v.reduce((a, b) => a + b, 0) / Math.max(1, n), p95: v[Math.floor(n * 0.95)] ?? 0 };
+    },
     destroy() {
       cancelAnimationFrame(raf);
       canvas.removeEventListener('webglcontextlost', onLost);
