@@ -4,6 +4,8 @@ import { DEFAULT_PAGES } from './presets.js';
 
 // Where the device's config document comes from, first match wins (ADR-0005):
 //
+//   'url-local' localStorage["mars.config@<url>"] with ?config=<url>: a copy of
+//              that link's document saved on this display ("Save as local")
 //   'url'      ?config=<url>, or the legacy station parameters (?source=, ?station=,
 //              ?hosts=, ?speed=) read as a v0 document. Both are read-only: the
 //              store doesn't save them unless the user asks it to.
@@ -13,8 +15,13 @@ import { DEFAULT_PAGES } from './presets.js';
 //
 // A source that is missing is skipped quietly; one that is there but broken is
 // skipped with a problem, so a bad file never leaves the display dark.
+//
+// `key` is where the store saves the document: the URL's own key for ?config=,
+// the display's otherwise (a legacy-parameter document saved becomes the
+// display's own, as before).
 
 export const STORAGE_KEY = 'mars.config';
+export const urlKey = (url) => `${STORAGE_KEY}@${url}`;
 export const SERVER_URL = '/config/mars.json';
 
 export const defaultDoc = () => ({
@@ -53,12 +60,18 @@ export async function loadDoc({ search = '', storage = globalThis.localStorage, 
 
   if (q.has('config')) {
     const url = q.get('config');
+    const key = urlKey(url);
+    const copy = attempt('localStorage', () => storage?.getItem(key));
+    if (copy) {
+      const doc = attempt(`localStorage["${key}"]`, () => prepare(JSON.parse(copy)));
+      if (doc) return { doc, origin: 'url-local', key, problems };
+    }
     try {
       const r = await fetchJson(fetchFn, url);
       if (r.missing) problems.push(`${url}: not found (${r.status})`);
       else {
         const doc = attempt(url, () => prepare(r.raw));
-        if (doc) return { doc, origin: 'url', problems };
+        if (doc) return { doc, origin: 'url', key, problems };
       }
     } catch (e) {
       problems.push(`${url}: ${e.message}`);
@@ -67,27 +80,27 @@ export async function loadDoc({ search = '', storage = globalThis.localStorage, 
     const legacy = legacyDoc(q);
     if (legacy) {
       const doc = attempt('URL parameters', () => prepare(legacy));
-      if (doc) return { doc, origin: 'url', problems };
+      if (doc) return { doc, origin: 'url', key: STORAGE_KEY, problems };
     }
   }
 
   const stored = attempt('localStorage', () => storage?.getItem(STORAGE_KEY));
   if (stored) {
     const doc = attempt(`localStorage["${STORAGE_KEY}"]`, () => prepare(JSON.parse(stored)));
-    if (doc) return { doc, origin: 'local', problems };
+    if (doc) return { doc, origin: 'local', key: STORAGE_KEY, problems };
   }
 
   try {
     const r = await fetchJson(fetchFn, SERVER_URL);
     if (!r.missing) {
       const doc = attempt(SERVER_URL, () => prepare(r.raw));
-      if (doc) return { doc, origin: 'server', problems };
+      if (doc) return { doc, origin: 'server', key: STORAGE_KEY, problems };
     }
   } catch (e) {
     problems.push(`${SERVER_URL}: ${e.message}`);
   }
 
-  return { doc: prepare(defaultDoc()), origin: 'default', problems };
+  return { doc: prepare(defaultDoc()), origin: 'default', key: STORAGE_KEY, problems };
 }
 
 // Device settings for this session: URL parameters override the document's

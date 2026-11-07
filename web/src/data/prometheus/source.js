@@ -139,7 +139,7 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
     const latency = allDown ? undefined : g.get('latency_p50_ms');
 
     for (const route of g.keys('endpoint_p95_ms')) {
-      slot('endpoints', route, () => store.addEndpoint({ route, slo: defaultSlo(g.get('endpoint_p95_ms', route)) }));
+      slot('endpoints', route, () => store.addEndpoint({ route, slo: defaultSlo(g.get('endpoint_p95_ms', route), thresh.warn) }));
     }
     for (const name of g.keys('stage_mean_ms')) slot('stages', name, () => store.addStage(name));
     for (const code of g.keys('region_rps')) {
@@ -334,11 +334,15 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
 
     // One record per minute for the almanac, for minutes [fromMin, toMin):
     // [{ mi, latency, errorRate, throughput, saturation }]. Each value is the
-    // minute's mean of the 1 s rule, read at the end of the minute.
+    // minute's mean of the 1 s rule, read at the end of the minute, except the
+    // error rate: the 1-minute rule is weighted by traffic like the live
+    // minutes, and the mean of the 10 s ratio fills in where it has no data
+    // (before the rule existed).
     async history(fromMin, toMin) {
       if (toMin <= fromMin) return [];
-      const names = ['latency_p50_ms', 'throughput_rps', 'error_ratio', 'saturation_ratio'];
-      const [lat, tp, err, sat] = await ranges(names.map((name) => [`avg_over_time(mars:${name}${s}[1m])`, (fromMin + 1) * 60, toMin * 60, 60]));
+      const mean = (name) => `avg_over_time(mars:${name}${s}[1m])`;
+      const queries = [mean('latency_p50_ms'), mean('throughput_rps'), `mars:error_ratio:rate1m${s} or on (station) ${mean('error_ratio')}`, mean('saturation_ratio')];
+      const [lat, tp, err, sat] = await ranges(queries.map((q) => [q, (fromMin + 1) * 60, toMin * 60, 60]));
       const byMin = (series) => {
         const m = new Map();
         for (const r of series) for (const [t, v] of r.values) m.set(Math.round(+t / 60) - 1, +v);

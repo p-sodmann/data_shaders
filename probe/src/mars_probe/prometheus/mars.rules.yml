@@ -37,6 +37,19 @@ groups:
           /
           (sum by (station) (rate(mars_http_request_duration_seconds_count[10s])) > 0)
 
+      # The same over a minute, for the almanac: one value per minute, weighted by traffic
+      # (a mean of the 10 s ratio isn't, so a quiet stretch with errors would count as much
+      # as a busy one).
+      - record: mars:error_ratio:rate1m
+        expr: |
+          (
+            sum by (station) (rate(mars_http_request_duration_seconds_count{code_class="5xx"}[1m]))
+            or
+            sum by (station) (rate(mars_http_request_duration_seconds_count[1m])) * 0
+          )
+          /
+          (sum by (station) (rate(mars_http_request_duration_seconds_count[1m])) > 0)
+
       # The busiest node decides: max over nodes of in_flight/limit and of CPU load. The
       # label_replace gives the two terms different label sets so `or` keeps both and `max`
       # picks the larger. A limit of 0 means unset, and `> 0` drops that term entirely.

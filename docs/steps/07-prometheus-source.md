@@ -1,6 +1,6 @@
 # Step 07: Prometheus source
 
-Status: partial
+Status: done
 Depends on: 03, 06
 Read first: [ADR-0002](../adr/0002-prometheus-backend.md), [ADR-0003](../adr/0003-metric-contract.md) (binding), [ADR-0005](../adr/0005-config-document.md)
 
@@ -72,10 +72,11 @@ already filled, and discovers its nodes, endpoints, stages and regions.
       tape is full for the time the stack has been running (up to 4 h).
       *(The tape matched Prometheus second for second. Prometheus itself had gaps here because the
       VM slept; see handoff.)*
-- [ ] Pages 1–5 for `api` all show real data. Rhythms finds the 5-minute batch job within about
+- [x] Pages 1–5 for `api` all show real data. Rhythms finds the 5-minute batch job within about
       20 minutes. Pipeline shows the demo stages. The radar shows the demo routes.
-      *(Everything but Rhythms verified. Rhythms can't see the batch job, which shows in
-      throughput, not P50 latency; see handoff and open questions.)*
+      *(Rhythms closed in step 08b, 2026-11-07: the analyser folds throughput too, and finds
+      the job as `5M00S +25% THRU`. Replaying the real data, it is found from 22 min on; see
+      [step 08b](08b-followups.md).)*
 - [x] `POST /_chaos` on demo-api with `latency_ms: 60, stage: infer` makes the tape ridge, the
       lamp go to DEGRADED or INCIDENT, and the pipeline name INFER as the bottleneck.
 - [x] `docker compose stop demo-search`: within 10 s its node lamp is offline, and the station
@@ -92,11 +93,11 @@ Edit UI, station discovery UI (step 09), GeoIP (step 11).
 
 ## Handoff
 
-**Status is `partial`** for one criterion: Rhythms doesn't find the demo's 5-minute batch job.
-The analyser folds P50 latency, and the batch job only shows in throughput (measured on real
-data, see Deviations). Fixing that needs a decision (analyser or demo, see open questions). Also
-open: the `mars-web` image couldn't be rebuilt here, because `npm ci` fails inside the Podman VM
-(see "Not verified").
+**Status was `partial`** for one criterion until 2026-11-07: Rhythms didn't find the demo's
+5-minute batch job, because the analyser folded P50 latency only and the job shows in
+throughput. Step 08b added the throughput search and closed it. Still open: the `mars-web`
+image couldn't be rebuilt here, because `npm ci` fails inside the Podman VM (see "Not
+verified").
 
 **Built**
 

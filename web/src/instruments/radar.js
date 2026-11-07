@@ -6,7 +6,8 @@ import { routeLabel } from '../data/telemetry.js';
 // the amber ring is at 75 % of its limit, one on the orange ring is at its
 // SLO (P95 latency or error budget, whichever is closer). The beam paints a
 // contact as it passes, the echo fades over the following turns, and the
-// faint echoes behind a contact show which way it is heading.
+// faint echoes behind a contact show which way it is heading. A contact with
+// too little traffic to judge (LOW) is drawn dim and keeps its last range.
 
 const TAU = Math.PI * 2;
 const PERIOD = 6; // seconds per turn
@@ -81,16 +82,20 @@ export function createRadar(station, options = {}) {
       // contacts
       const eps = store.endpoints;
       const n = eps.length;
-      let nearest = null, closing = 0, over = 0, live = 0;
+      let nearest = null, closing = 0, over = 0, live = 0, low = 0;
       eps.forEach((ep, i) => {
         if (!ep.live) return;
         if (!echoesOf.has(ep.route)) echoesOf.set(ep.route, []);
         const echoList = echoesOf.get(ep.route);
         const bearingI = ((i + 0.35) / n) * TAU;
         live++;
-        if (ep.trend > 0.002) closing++;
+        if (ep.low) low++;
+        else {
+          if (ep.trend > 0.002) closing++;
+          if (!nearest || ep.pressure > nearest.pressure) nearest = ep;
+        }
         if (ep.state === 2) over++;
-        if (!nearest || ep.pressure > nearest.pressure) nearest = ep;
+        const dim = ep.low ? 0.4 : 1;
         const k = Math.floor(turn - bearingI / TAU);
         if (k !== lastTurnOf.get(ep.route)) {
           lastTurnOf.set(ep.route, k);
@@ -107,11 +112,11 @@ export function createRadar(station, options = {}) {
           const c = STATE_COLORS[e.state];
           const [x0, y0] = at(b - size / e.r / 4, e.r);
           const [x1, y1] = at(b + size / e.r / 4, e.r);
-          v.line(x0, y0, x1, y1, c, 0.95 * fade, head ? 1.3 : 0.9);
+          v.line(x0, y0, x1, y1, c, 0.95 * fade * dim, head ? 1.3 : 0.9);
           if (j > 0) {
             const p = list[j - 1];
             const [ax, ay] = at(b, p.r), [bx, by] = at(b, e.r);
-            v.line(ax, ay, bx, by, c, 0.12 * fade, 0.45);
+            v.line(ax, ay, bx, by, c, 0.12 * fade * dim, 0.45);
           }
         });
         const e = list[list.length - 1];
@@ -122,12 +127,12 @@ export function createRadar(station, options = {}) {
         const [lx, ly] = at(b, lr);
         if (lr > e.r) {
           const [bx, by] = at(b, e.r + 0.03);
-          v.line(bx, by, lx, ly, c, 0.18 + 0.3 * glow, 0.45);
+          v.line(bx, by, lx, ly, c, (0.18 + 0.3 * glow) * dim, 0.45);
         }
         const right = Math.sin(b) >= -0.2;
         const label = routeLabel(ep.route).replace('/v1/', '/');
         const tx = right ? lx + 7 : lx - 7 - v.textWidth(label, 1.3);
-        v.text(tx, ly - 11, label, c, (ep.state ? 0.55 : 0.25) + 0.5 * glow, 1.3);
+        v.text(tx, ly - 11, label, c, ((ep.state ? 0.55 : 0.25) + 0.5 * glow) * dim, 1.3);
       });
 
       // own station
@@ -148,6 +153,7 @@ export function createRadar(station, options = {}) {
       rows.push([`CONTACTS ${live}`, PH.ok, 0.75]);
       rows.push([`CLOSING  ${closing}`, closing ? PH.warn : PH.ok, closing ? 0.85 : 0.75]);
       rows.push([`OVER SLO ${over}`, over ? PH.crit : PH.ok, over ? 0.95 : 0.75]);
+      if (low) rows.push([`LOW      ${low}`, PH.ok, 0.45]);
       rows.push([`SWEEP    ${PERIOD.toFixed(1)}S`, PH.ok, 0.75]);
       if (side) {
         rows.forEach(([s, c, inten], k) => v.text(lx, cy - rows.length * 9 + k * 18, s, c ?? PH.ok, inten ?? 0.42, 1.6));

@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadDoc, deviceSettings, STORAGE_KEY, SERVER_URL } from '../src/config/load.js';
-import { createDocStore } from '../src/config/store.js';
+import { loadDoc, deviceSettings, urlKey, STORAGE_KEY, SERVER_URL } from '../src/config/load.js';
+import { createDocStore, undoKey } from '../src/config/store.js';
 
 const docNamed = (name) => ({ version: 1, stations: [{ id: 'main', name, source: { kind: 'sim' } }], pages: [{ id: 'p', name: 'P', panels: [] }] });
 
 function memoryStorage(init = {}) {
   const m = new Map(Object.entries(init));
-  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), map: m };
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), map: m };
 }
 
 // a fetch that serves `files` (url → JSON value or raw string) and 404s the rest
@@ -19,6 +19,103 @@ function fakeFetch(files = {}) {
 }
 
 const nameOf = (r) => r.doc.stations[0].name;
+
+describe('saved copies of a ?config= document', () => {
+  const fetch = fakeFetch({ '/cfg/a.json': docNamed('URL'), [SERVER_URL]: docNamed('SERVER') });
+  const rename = (name) => (d) => ({ ...d, stations: [{ ...d.stations[0], name }] });
+
+  it('a saved copy wins over its link, and only for that link', async () => {
+    const storage = memoryStorage({ [STORAGE_KEY]: JSON.stringify(docNamed('LOCAL')), [urlKey('/cfg/a.json')]: JSON.stringify(docNamed('COPY')) });
+    const r = await loadDoc({ storage, fetch, search: '?config=/cfg/a.json' });
+    expect([r.origin, nameOf(r), r.key]).toEqual(['url-local', 'COPY', 'mars.config@/cfg/a.json']);
+    const other = await loadDoc({ storage, fetch, search: '?config=/cfg/b.json' });
+    expect(other.origin).not.toBe('url-local');
+    const plain = await loadDoc({ storage, fetch });
+    expect([plain.origin, nameOf(plain)]).toEqual(['local', 'LOCAL']);
+  });
+
+  it('Save as local writes under the link, and the next load finds it', async () => {
+    const storage = memoryStorage({ [STORAGE_KEY]: JSON.stringify(docNamed('LOCAL')) });
+    const first = await loadDoc({ storage, fetch, search: '?config=/cfg/a.json' });
+    expect(first.origin).toBe('url');
+    const s = createDocStore({ ...first, storage });
+    s.setDoc(rename('EDITED'));
+    s.save();
+    expect(s.getMeta()).toMatchObject({ origin: 'url-local', readOnly: false });
+    expect(JSON.parse(storage.map.get(STORAGE_KEY)).stations[0].name).toBe('LOCAL');
+    const again = await loadDoc({ storage, fetch, search: '?config=/cfg/a.json' });
+    expect([again.origin, nameOf(again)]).toEqual(['url-local', 'EDITED']);
+  });
+
+  it('revert() removes the copy and its history', async () => {
+    const storage = memoryStorage();
+    const s = createDocStore({ ...(await loadDoc({ storage, fetch, search: '?config=/cfg/a.json' })), storage });
+    s.setDoc(rename('EDITED'));
+    s.save();
+    expect(storage.map.has(undoKey(urlKey('/cfg/a.json')))).toBe(true);
+    expect(s.revert()).toBe(true);
+    expect([...storage.map.keys()]).toEqual([]);
+    const r = await loadDoc({ storage, fetch, search: '?config=/cfg/a.json' });
+    expect([r.origin, nameOf(r)]).toEqual(['url', 'URL']);
+  });
+
+  it('legacy parameters save as the display\'s own document', async () => {
+    const r = await loadDoc({ storage: memoryStorage(), fetch, search: '?station=old' });
+    expect([r.origin, r.key]).toEqual(['url', STORAGE_KEY]);
+  });
+});
+
+describe('undo across reloads', () => {
+  const rename = (name) => (d) => ({ ...d, pages: [{ ...d.pages[0], name }] });
+  const flush = (s) => s.save();
+
+  it('comes back with the document it leads to', () => {
+    const storage = memoryStorage();
+    const s = createDocStore({ doc: docNamed('A'), origin: 'local', storage });
+    s.setDoc(rename('ONE'));
+    s.setDoc(rename('TWO'));
+    s.undo();
+    flush(s);
+    const again = createDocStore({ doc: JSON.parse(storage.map.get(STORAGE_KEY)), origin: 'local', storage });
+    expect(again.getMeta()).toMatchObject({ canUndo: true, canRedo: true });
+    expect(again.undo().pages[0].name).toBe('P');
+    expect(again.redo().pages[0].name).toBe('ONE');
+    expect(again.redo().pages[0].name).toBe('TWO');
+  });
+
+  it('is dropped when another document loads', () => {
+    const storage = memoryStorage();
+    const s = createDocStore({ doc: docNamed('A'), origin: 'local', storage });
+    s.setDoc(rename('ONE'));
+    flush(s);
+    const other = createDocStore({ doc: docNamed('CHANGED ON SERVER'), origin: 'local', storage });
+    expect(other.getMeta().canUndo).toBe(false);
+  });
+
+  it('is not restored for an unsaved URL document', () => {
+    const storage = memoryStorage();
+    const s = createDocStore({ doc: docNamed('A'), origin: 'local', storage });
+    s.setDoc(rename('ONE'));
+    flush(s);
+    const url = createDocStore({ doc: JSON.parse(storage.map.get(STORAGE_KEY)), origin: 'url', storage });
+    expect(url.getMeta().canUndo).toBe(false);
+  });
+
+  it('keeps the document when the history is too big for storage', () => {
+    const storage = memoryStorage();
+    const setItem = storage.setItem;
+    storage.setItem = (k, v) => {
+      if (k.startsWith('mars.undo@')) throw new Error('QuotaExceededError');
+      setItem(k, v);
+    };
+    const s = createDocStore({ doc: docNamed('A'), origin: 'local', storage });
+    s.setDoc(rename('ONE'));
+    flush(s);
+    expect(JSON.parse(storage.map.get(STORAGE_KEY)).pages[0].name).toBe('ONE');
+    expect(storage.map.has(undoKey(STORAGE_KEY))).toBe(false);
+    expect(s.getMeta().origin).toBe('local');
+  });
+});
 
 describe('load order', () => {
   const all = {

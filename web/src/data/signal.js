@@ -3,7 +3,9 @@
 // 4-hour, 1-second signal history; nothing needs new data.
 //
 //   spectrum   latency amplitude spectrum over 4 h, on a log period axis,
-//              with detected rhythms (peaks), their harmonics and next peak
+//              with detected rhythms (peaks), their harmonics and next peak.
+//              Rhythms are searched in latency and in throughput: a batch job
+//              often shows as load before it shows as latency.
 //   live       the same spectrum over the last 10 min, so the display moves
 //   waterfall  short-window spectrogram rows, one per 30 s, 4 h deep, with a
 //              live top row recomputed every 5 s
@@ -15,7 +17,7 @@
 // not multiply the cost.
 
 const TAU = Math.PI * 2;
-const LAT = 0, SAT = 3;
+const LAT = 0, TPUT = 2, SAT = 3;
 
 export const LONG = { step: 5, span: 4 * 3600, pmin: 30, pmax: 7200, bins: 180 };
 export const SHORT = { step: 4, span: 1800, pmin: 16, pmax: 600, bins: 96, every: 30, rows: 480 };
@@ -38,6 +40,9 @@ export function fmtPeriod(sec) {
   if (sec >= 60) return `${Math.floor(sec / 60)}M${pad(sec % 60)}S`;
   return `${sec}S`;
 }
+
+// the signals a rhythm was found in, for labels: LAT, THRU or LAT+THRU
+export const rhythmSignals = (pk) => (pk.signals ?? [pk.signal]).map((s) => s.toUpperCase()).join('+');
 
 // Detrended, Hann-windowed samples (gaps filled from the trend), or null when
 // less than half the window has data.
@@ -105,10 +110,18 @@ function binned(store, k, t0, n, step) {
 const TRIALS = [];
 for (let p = 60; p < 600; p += 5) TRIALS.push(p);
 for (let p = 600; p <= 3600; p += 15) TRIALS.push(p);
-// minAmp in ms. minData: the search runs once this many seconds of the window
+// minAmp in ms (latency) or % of the median (throughput). Traffic noise is
+// correlated over tens of seconds, so folds of it score as significant by
+// chance with amplitudes up to about 10 %; a rhythm in traffic has to move it
+// by more than that to be shown. highpass: the running mean (s) taken off
+// first. In traffic a rhythm is a burst (a batch job) on top of the day's
+// curve, and the curve has to go entirely, or it holds the bursts in its own
+// folded profile and hides them: 2 minutes takes off a swing of 10 minutes
+// or more (the demo's compressed day) and leaves bursts of up to about 40 s
+// standing. minData: the search runs once this many seconds of the window
 // have data (a live source starts with only what its backend has kept; four
 // cycles of a 5-minute job fit), not only once the 4 h reference is half full.
-const RHYTHM = { max: 5, minSig: 6, minAmp: 0.3, minData: 1200 };
+const RHYTHM = { max: 5, minSig: 6, minAmp: { lat: 0.3, thru: 12 }, highpass: { lat: 1200, thru: 120 }, minData: 1200 };
 // phase bins of about P/40, never finer than two samples
 const binsFor = (P) => Math.max(6, Math.min(40, Math.round(P / Math.max(10, P / 40))));
 
@@ -253,17 +266,40 @@ export function createSignal(store, profile) {
     return { x, t0 };
   }
 
+  // Rhythms in latency and in throughput, merged: one found in both (within
+  // 2 %) is reported once, from the signal where it is stronger, with the
+  // other listed in `signals`. Incidents (latency above WARN) are left out of
+  // both. Throughput is searched in % of its median, so a batch job reads as
+  // "+22 %" whatever the station's traffic.
+  function findAllRhythms(lat, t0, now) {
+    const n = lat.length;
+    const calm = lat.map((v) => (v > thresh.warn ? NaN : v));
+    const tp = binned(store, TPUT, t0, n, LONG.step);
+    const vals = [];
+    for (let i = 0; i < n; i++) if (tp[i] === tp[i] && calm[i] === calm[i]) vals.push(tp[i]);
+    const mid = median(vals);
+    const thru = mid > 0 ? tp.map((v, i) => (calm[i] === calm[i] ? (v / mid) * 100 : NaN)) : null;
+    const found = [...findRhythms(calm, t0, now, 'lat'), ...(thru ? findRhythms(thru, t0, now, 'thru') : [])];
+    found.sort((a, b) => b.sig - a.sig);
+    const out = [];
+    for (const r of found) {
+      const same = out.find((o) => Math.abs(o.period / r.period - 1) < 0.02);
+      if (!same) out.push({ ...r, signals: [r.signal] });
+      else if (!same.signals.includes(r.signal)) same.signals.push(r.signal);
+    }
+    return out.slice(0, RHYTHM.max);
+  }
+
   // Epoch folding, as in a pulsar search: fold the high-passed series at every
   // trial period and score how far the folded profile stands out of the noise.
   // Candidates are then confirmed from the shortest period up, each confirmed
   // rhythm is subtracted, so a long period that merely contains a shorter one
   // (60 min contains every 10 min) is not reported twice, and a period whose
   // profile grows when folded at 2-4x its length is an alias and is dropped.
-  function findRhythms(x, t0, now) {
+  // x has incidents removed already (NaN); `signal` names it ('lat' or 'thru').
+  function findRhythms(x, t0, now, signal) {
     const n = x.length, dt = LONG.step;
-    // rhythms describe routine behaviour: leave incidents (above WARN) out
-    x = x.map((v) => (v > thresh.warn ? NaN : v));
-    const hp = highpass(x, Math.round(1200 / dt), RHYTHM.minData / dt);
+    const hp = highpass(x, Math.round(RHYTHM.highpass[signal] / dt), RHYTHM.minData / dt);
     if (!hp) return [];
     // clip at 4 robust sigma: an incident should weigh no more than a scheduled bump
     const vals = [];
@@ -271,14 +307,43 @@ export function createSignal(store, profile) {
     const m0 = median(vals);
     const rsd = 1.4826 * median(vals.map((v) => Math.abs(v - m0)));
     const lim = 4 * rsd;
-    // too small to matter on a latency display
-    const minAmp = Math.max(RHYTHM.minAmp, 0.75 * rsd);
     if (lim > 1e-3) for (let i = 0; i < n; i++) if (hp[i] === hp[i]) hp[i] = Math.max(m0 - lim, Math.min(m0 + lim, hp[i]));
     // total variance, bumps included: a fold at an unrelated period then
     // scores about 1, whatever the series contains
     let sv = 0, sc = 0;
     for (const v of hp) if (v === v) (sv += v * v), sc++;
     const sigma = Math.sqrt(sv / Math.max(1, sc)) || 1e-6;
+    // Too small to matter on the display, or within the noise. The noise is
+    // read from neighbouring samples (robust spread of the first differences,
+    // / sqrt 2), not from the whole series, where a smooth swing (the demo's
+    // 10-minute traffic cycle) would count as noise and never clear its own
+    // floor. Measured again once a confirmed rhythm is subtracted.
+    let minAmp;
+    const measure = () => {
+      const steps = [];
+      let prev = NaN;
+      for (const v of hp) {
+        if (v !== v) continue;
+        if (prev === prev) steps.push(v - prev);
+        prev = v;
+      }
+      const m = median(steps);
+      minAmp = Math.max(RHYTHM.minAmp[signal], (0.75 * 1.4826 * median(steps.map((d) => Math.abs(d - m)))) / Math.SQRT2);
+    };
+    measure();
+    // only periods with four cycles in the data there is: a station with
+    // half an hour of history can't confirm an hourly rhythm, and those long
+    // trial periods would crowd out the short ones. Half a cycle of slack:
+    // the high-pass leaves the window's first minutes empty, and a full 4 h
+    // tape must still try 60 min (consistency() wants four real cycles anyway).
+    let first = -1, last = -1;
+    for (let i = 0; i < n; i++) {
+      if (hp[i] !== hp[i]) continue;
+      if (first < 0) first = i;
+      last = i;
+    }
+    const maxP = Math.min(TRIALS[TRIALS.length - 1], ((last - first + 1) * dt) / 3.5);
+    const trials = TRIALS.filter((P) => P <= maxP);
     const score = (P, B = binsFor(P), robust = true, y = hp) => {
       const f = (robust ? foldMedian : fold)(y, t0, dt, P, B);
       let chi = 0, dof = 0;
@@ -314,7 +379,7 @@ export function createSignal(store, profile) {
           const c = score(q);
           if (c.red >= RHYTHM.minSig && steady(c) && score(P, here.B, true, without(c)).red < RHYTHM.minSig) to = q;
         }
-        for (let k = 2; k <= 12 && !to && P * k <= TRIALS[TRIALS.length - 1]; k++) {
+        for (let k = 2; k <= 12 && !to && P * k <= maxP; k++) {
           if (fine(P * k, P / here.B).amp >= 1.6 * here.amp) to = P * k;
         }
         if (!to) break;
@@ -327,7 +392,7 @@ export function createSignal(store, profile) {
     for (let pass = 0; pass < RHYTHM.max; pass++) {
       // strongest period that recurs in most of its cycles
       // cheap mean-fold pre-filter, then the robust median fold on the best
-      const ranked = TRIALS.map((P) => score(P, binsFor(P), false))
+      const ranked = trials.map((P) => score(P, binsFor(P), false))
         .sort((a, b) => b.red - a.red)
         .slice(0, 25)
         .map((c) => score(c.P))
@@ -346,6 +411,7 @@ export function createSignal(store, profile) {
       if (c.red < RHYTHM.minSig * 0.7 || c.amp < minAmp || !run || out.some((o) => Math.abs(o.period / c.P - 1) < 0.02)) break;
       const { P, B, f } = c;
       for (let i = 0; i < n; i++) if (hp[i] === hp[i]) hp[i] -= f.mean[phaseBin(t0 + i * dt + dt / 2, P, B)];
+      measure();
 
       const prof = Array.from(f.mean, (v) => v - c.med);
       let kMax = 0;
@@ -358,7 +424,7 @@ export function createSignal(store, profile) {
       while (next - P > now) next -= P;
 
       // a rhythm that began inside the window is new
-      out.push({ period: P, sig: c.red, amp: c.amp, profile: prof, next, since: run.since, fresh: run.start >= 2 });
+      out.push({ period: P, signal, sig: c.red, amp: c.amp, profile: prof, next, since: run.since, fresh: run.start >= 2 });
     }
     return out.sort((a, b) => b.sig - a.sig);
   }
@@ -502,7 +568,7 @@ export function createSignal(store, profile) {
         const series = updateSpectrum(now);
         // the rhythm search is the expensive part: once a minute of data, at most every 8 s
         if (series && (tRhythm < 0 || (now - tRhythm >= 60 && wall - wallRhythm >= 8000))) {
-          spec.peaks = findRhythms(series.x, series.t0, now);
+          spec.peaks = findAllRhythms(series.x, series.t0, now);
           spec.searched = true;
           tRhythm = now;
           wallRhythm = wall;

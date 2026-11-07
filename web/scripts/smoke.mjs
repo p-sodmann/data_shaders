@@ -179,8 +179,9 @@ async function checkSwitching(browser) {
 // The service panel (step 08), driven like a person would: open the housing on the two-station
 // example, add a page, take a radar from the module bay, carry it three columns right by its
 // label, rebind it to the second station, save the URL cartridge as local, close the housing and
-// reload without ?config=. The layout must come back from localStorage. Then lock the device and
-// check that E no longer opens it.
+// reload the same link. The saved copy must win over the link (step 08b), with its undo history;
+// Revert to URL brings the file's version back. Then grow the document to 12 pages (the footer
+// shows nine keys and a mark, [ wraps round), lock the device and check that E no longer opens it.
 async function checkServicePanel(browser) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await context.newPage();
@@ -225,19 +226,52 @@ async function checkServicePanel(browser) {
   await page.screenshot({ path: join(SNAPSHOTS, 'service-settings.png') });
   await page.click('.save-local');
   await page.waitForTimeout(200);
-  expect(/saved on this display/i.test(await page.textContent('.cartridge')), 'cartridge not shown as saved after Save as local');
+  expect(/local copy wins/i.test(await page.textContent('.cartridge')), 'cartridge not shown as a local copy after Save as local');
   await page.keyboard.press('Escape');
   expect(!(await editing()), 'Esc did not close the housing');
 
-  await page.goto(`${BASE}?page=5`, { waitUntil: 'load' });
+  await page.goto(`${BASE}${TWO}&page=5`, { waitUntil: 'load' });
   await page.waitForTimeout(2000);
   const back = (await doc()).pages.at(-1);
   const r = back.panels.find((p) => p.id === 'radar');
   expect(back.name === 'PAGE 5' && r && r.x === 3 && r.y === 0 && r.station === 'search', `after reload: ${JSON.stringify(back)}`);
   const origin = await page.evaluate(() => window.__mars.origin);
-  expect(origin === 'local', `after reload the document came from "${origin}"`);
+  expect(origin === 'url-local', `after reload the document came from "${origin}"`);
+  expect(/local copy/i.test(await page.textContent('.hd .plate .cap')), 'header shows no local-copy marker');
   const names = await text(page, '.mod-head .name');
   expect(names.includes('Proximity · SEARCH-01'), `module headers after reload: ${names.join(' | ')}`);
+
+  // the undo history came back with the copy: the last change was the rebinding
+  await page.keyboard.press('e');
+  await page.waitForSelector('.service', { timeout: 5000 });
+  const radarStation = async () => (await doc()).pages.at(-1).panels.find((p) => p.id === 'radar')?.station;
+  await page.keyboard.press('ControlOrMeta+z');
+  expect((await radarStation()) === 'main', `undo after reload left the radar on "${await radarStation()}"`);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  expect((await radarStation()) === 'search', 'redo after reload did not rebind the radar');
+
+  // Revert to URL: two presses, then the page reloads with the file's document
+  await page.click('.revert-url');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'load' }), page.click('.revert-url')]);
+  await page.waitForTimeout(1500);
+  const reverted = await doc();
+  const rOrigin = await page.evaluate(() => window.__mars.origin);
+  expect(rOrigin === 'url' && !reverted.pages.some((p) => p.name === 'PAGE 5'), `after Revert to URL: origin "${rOrigin}", pages ${reverted.pages.map((p) => p.name).join(', ')}`);
+
+  // more pages than keys
+  await page.keyboard.press('e');
+  await page.waitForSelector('.service', { timeout: 5000 });
+  while ((await doc()).pages.length < 12) await page.click('.page-add');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('1');
+  await page.waitForTimeout(200);
+  const pageKeys = await page.$$eval('.ft .keys > .key', (ks) => ks.filter((k) => /^\d+$/.test(k.querySelector('kbd')?.textContent ?? '')).length);
+  const marks = await page.$$eval('.ft .keymore', (ks) => ks.map((k) => k.textContent));
+  expect(pageKeys === 9 && marks.join('') === '▸', `12 pages: ${pageKeys} page keys, marks "${marks.join('')}"`);
+  await page.keyboard.press('[');
+  await page.waitForTimeout(200);
+  const plate = await page.$$eval('.hd .plate', (ps) => ps.find((p) => /^page/i.test(p.querySelector('.cap').textContent)).querySelector('.plate-val').textContent);
+  expect(/^12 /.test(plate.trim()), `[ from page 1 shows "${plate.trim()}", expected page 12`);
 
   // lock it: E is ignored from then on
   await page.keyboard.press('e');
@@ -301,7 +335,7 @@ async function main() {
       console.log('✗ service panel');
       for (const e of service) console.log(`    ${e}`);
     } else {
-      console.log('✓ service panel  page added, radar placed, moved, rebound, saved, reloaded; locked E ignored  → snapshots/service-*.png');
+      console.log('✓ service panel  page added, radar placed, moved, rebound, saved, reloaded (copy wins, undo kept), reverted, 12 pages; locked E ignored  → snapshots/service-*.png');
     }
   } finally {
     await browser.close();

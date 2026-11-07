@@ -66,6 +66,11 @@ tests:
         exp_samples:
           - labels: 'mars:error_ratio{station="api"}'
             value: 0.1
+      - expr: mars:error_ratio:rate1m
+        eval_time: 20s
+        exp_samples:
+          - labels: 'mars:error_ratio:rate1m{station="api"}'
+            value: 0.1
       - expr: mars:node_up
         eval_time: 20s
         exp_samples:

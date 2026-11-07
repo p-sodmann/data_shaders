@@ -350,6 +350,17 @@ body.idle, body.idle * { cursor: none !important; }
 }
 .key.latch.on kbd::after { background: #7dffb4; box-shadow: 0 0 0.8vmin rgba(125, 255, 180, 0.8); }
 .keysep { width: 1px; align-self: stretch; background: var(--rule); margin: 0 0.4vmin; }
+/* more pages than keys: an engraved mark on the side where they are hidden */
+.keymore {
+  background: none;
+  border: 0;
+  padding: 0 0.2vmin;
+  color: var(--ink-dim);
+  font: 600 calc(var(--u) * 0.82) var(--sans);
+  opacity: 0.6;
+  cursor: pointer;
+}
+.keymore:hover { opacity: 1; color: var(--ink); }
 .key:hover { color: var(--ink); }
 .grille {
   flex: 1;

@@ -1,4 +1,5 @@
 import { createStation } from './station.js';
+import { createDeviceAlerts } from '../data/prometheus/device-alerts.js';
 
 // Keeps one running station per entry of the document's `stations`.
 //
@@ -15,16 +16,21 @@ import { createStation } from './station.js';
 // stores that may have been swapped.
 //
 // Source kinds this build can't run get no station, so their panels show NO SIGNAL.
+//
+// While the document has a Prometheus station, the manager also watches the
+// alerts that name no station (device.alerts: the header's EXT lamp, and the
+// event logs bound to '*').
 
 const RUNNABLE = new Set(['sim', 'poll', 'prometheus']);
 // STALE sits between nominal and degraded: worth a look, not an alarm
 const SEV = { NOMINAL: 0, STALE: 0.5, DEGRADED: 1, INCIDENT: 2 };
 
-export function createStationManager({ create = createStation } = {}) {
+export function createStationManager({ create = createStation, watchAlerts = createDeviceAlerts } = {}) {
   let entries = new Map(); // id → { key, station, off }
   let snapshot = { list: Object.freeze([]), byId: Object.freeze({}) };
   const listeners = new Set();
   const skipped = new Set();
+  let alerts = null, alertsUrl = null, alertsOff = null;
 
   // The device as cross-station instruments see it: always the current list.
   // One object for the whole session, so instruments built on it never need
@@ -33,7 +39,27 @@ export function createStationManager({ create = createStation } = {}) {
     get stations() {
       return snapshot.list;
     },
+    get alerts() {
+      return alerts;
+    },
   });
+
+  // one watch per Prometheus URL, only while some station reads from it
+  function syncAlerts(defs, ctx) {
+    const url = defs.some((d) => d.source.kind === 'prometheus') ? (ctx.prometheus ?? '/prom') : null;
+    if (url === alertsUrl) return;
+    stopAlerts();
+    alertsUrl = url;
+    if (!url) return;
+    alerts = watchAlerts({ url, fetch: ctx.fetch });
+    alertsOff = alerts.subscribe(() => listeners.forEach((fn) => fn()));
+    Promise.resolve(alerts.start()).catch((e) => console.error('[MARS] alert watch failed', e));
+  }
+  function stopAlerts() {
+    alertsOff?.();
+    alerts?.stop();
+    alerts = alertsOff = alertsUrl = null;
+  }
 
   function publish() {
     const list = [...entries.values()].map((e) => e.station);
@@ -42,6 +68,7 @@ export function createStationManager({ create = createStation } = {}) {
   }
 
   function sync(defs, ctx = {}) {
+    syncAlerts(defs, ctx);
     const next = new Map();
     let changed = false;
     for (const def of defs) {
@@ -94,6 +121,7 @@ export function createStationManager({ create = createStation } = {}) {
       return () => listeners.delete(fn);
     },
     dispose() {
+      stopAlerts();
       for (const { station, off } of entries.values()) {
         off?.();
         station.stop();

@@ -31,6 +31,7 @@ import { StationLamp } from './controls.jsx';
 
 const ORIGIN = {
   url: 'URL cartridge · not saved',
+  'url-local': 'URL cartridge · local copy wins',
   local: 'Saved on this display',
   server: 'Server copy · saved on first change',
   default: 'Built-in · saved on first change',
@@ -39,6 +40,18 @@ const ORIGIN = {
 export function Workbench({ doc, meta, pageIndex, stations, device, named, first, edit, notice, onNotice, store, stdOpen, onStdClose, onPage }) {
   const page = doc.pages[pageIndex];
   const [selected, setSelected] = useState(null);
+  // Revert to URL throws away this display's edits: it needs two presses
+  const [confirmRevert, setConfirmRevert] = useState(false);
+  useEffect(() => {
+    if (!confirmRevert) return undefined;
+    const id = setTimeout(() => setConfirmRevert(false), 3000);
+    return () => clearTimeout(id);
+  }, [confirmRevert]);
+  const revert = () => {
+    if (!confirmRevert) return setConfirmRevert(true);
+    if (store.revert()) location.reload();
+    else onNotice('local copy not removed');
+  };
   const [swapping, setSwapping] = useState(false);
   const carried = useRef(null);
   const panel = page.panels.find((p) => p.id === selected) ?? null;
@@ -125,6 +138,11 @@ export function Workbench({ doc, meta, pageIndex, stations, device, named, first
             {meta.readOnly && (
               <Key k="⤓" onClick={store.save} className="save-local">
                 Save as local
+              </Key>
+            )}
+            {meta.origin === 'url-local' && (
+              <Key k="⤒" onClick={revert} className="revert-url">
+                {confirmRevert ? 'Press again' : 'Revert to URL'}
               </Key>
             )}
             <Key k="↶" onClick={store.undo} disabled={!meta.canUndo}>

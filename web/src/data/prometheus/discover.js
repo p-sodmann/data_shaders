@@ -16,9 +16,11 @@ const SPAN = 4 * HOUR;
 
 // Without an override, an endpoint's P95 SLO is twice what it was observed to
 // be over the last 4 hours: wide enough that normal traffic sits at about half
-// of it on the radar, tight enough that a real slowdown closes in.
+// of it on the radar, tight enough that a real slowdown closes in. `floor` is
+// the station's thresh.warn: a small, fast route would otherwise get an SLO of
+// a few ms, which the P95 of a handful of requests crosses all the time.
 export const SLO_FACTOR = 2;
-export const defaultSlo = (p95) => Math.max(1, Math.round(SLO_FACTOR * p95));
+export const defaultSlo = (p95, floor = 1) => Math.max(1, floor, Math.round(SLO_FACTOR * p95));
 
 // Without an override, stages are ordered by what their names usually mean
 // (the way in first, the way out last), then alphabetically. The metrics carry

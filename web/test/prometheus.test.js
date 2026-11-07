@@ -149,6 +149,9 @@ describe('discovery', () => {
     expect(found.stages[0]).toBe('egress');
     expect(orderStages(['b', 'a', 'send', 'parse'])).toEqual(['parse', 'a', 'b', 'send']);
     expect(defaultSlo(0.2)).toBe(1);
+    // the station's thresh.warn is the floor: a 5 ms route doesn't get a 10 ms SLO
+    expect(defaultSlo(5, 25)).toBe(25);
+    expect(defaultSlo(20, 25)).toBe(40);
   });
 
   it('joins region codes against the table and skips unknown ones once', async () => {
@@ -346,7 +349,7 @@ describe('prometheus station', () => {
     prom.live = success({ resultType: 'vector', result: [...base.data.result, ep('/v1/fresh')] });
     await vi.advanceTimersByTimeAsync(1100);
     const fresh = store().endpoints.find((e) => e.route === '/v1/fresh');
-    expect(fresh).toMatchObject({ slo: 24, auto: true });
+    expect(fresh).toMatchObject({ slo: 25, auto: true }); // 2 × 12 ms, floored at thresh.warn
     expect(store().events.some((e) => e.text === 'NEW ROUTE /v1/fresh')).toBe(true);
     expect(station.getStatus().generation).toBe(1);
     // 5 discovered + 8 spare: the 9th new route finds no slot
@@ -376,6 +379,39 @@ describe('async source contract', () => {
     const p = source.backfill(Date.now() / 1000 - 10);
     expect(p).toBeInstanceOf(Promise);
     expect((await p).length).toBeGreaterThanOrEqual(9);
+  });
+});
+
+describe('measured endpoints', () => {
+  // one auto endpoint with a tight SLO, judged from samples at `rps`
+  function run(rps, p95s, caps = { nodes: 1, endpoints: 2, stages: 0, regions: 0 }) {
+    const profile = createProfile({ id: 'x', name: 'X', endpoints: [['/v1/models', 0, 10, true]] });
+    let t = 1793977200;
+    const store = createTelemetry({ profile, hostCount: 1, now: () => t, kind: 'LIVE', getSpeed: () => 1, caps });
+    for (const p95 of p95s) {
+      t++;
+      store.ingest([{ t, latency: 15, throughput: 30, errorRate: 0, saturation: 0.2, hostStates: Uint8Array.of(0), hostLoads: Float32Array.of(0.2), hostLatency: Float32Array.of(15), stageLatency: null, requests: null, endpoints: [{ rps, p95, err: 0 }], regions: null }]);
+    }
+    return store;
+  }
+  const swinging = Array.from({ length: 120 }, (_, i) => (i % 20 < 10 ? 4 : 14));
+
+  it('holds the state of a route with too little traffic, and logs nothing', () => {
+    const store = run(2, swinging);
+    const ep = store.endpoints[0];
+    expect(ep.low).toBe(true);
+    expect(ep.state).toBe(0);
+    expect(store.events.filter((e) => e.text.includes('/v1/models'))).toHaveLength(0);
+  });
+
+  it('judges it once there is traffic', () => {
+    const ep = run(20, swinging).endpoints[0];
+    expect(ep.low).toBe(false);
+    expect(ep.p95).toBeGreaterThan(4);
+  });
+
+  it('leaves simulated endpoints alone', () => {
+    expect(run(2, swinging, {}).endpoints[0].low).toBe(false);
   });
 });
 

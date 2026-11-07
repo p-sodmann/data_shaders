@@ -95,7 +95,7 @@ export const docSchema = z
     device: device.default(() => device.parse({})),
     prometheus: z.object({ url: z.string().min(1).default('/prom') }).optional(),
     stations: z.array(station).min(1),
-    pages: z.array(page).min(1).max(9), // page keys are 1–9
+    pages: z.array(page).min(1), // keys 1–9 reach the first nine, [ ] and ← → all of them
   })
   .superRefine((doc, ctx) => {
     const issue = (path, message) => ctx.addIssue({ code: 'custom', path, message });

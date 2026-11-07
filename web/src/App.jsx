@@ -5,7 +5,7 @@ import { worstStation } from './station/manager.js';
 import { EngineContext, Key, Module, Screen } from './ui/device.jsx';
 import { PageView, firstNumbers } from './ui/PageView.jsx';
 import { Field } from './ui/service/controls.jsx';
-import { addPage, deletePage, movePage, renamePage, MAX_PAGES } from './config/edit.js';
+import { addPage, deletePage, movePage, renamePage } from './config/edit.js';
 
 // The service panel (and react-grid-layout with it) loads when the housing is
 // first opened; a display on a wall never needs it.
@@ -37,6 +37,25 @@ function useWorstState(list) {
   return useSyncExternalStore(subscribe, () => worstStation(list)?.store.status ?? 'NOMINAL');
 }
 
+// The header's EXT lamp: alerts that name no station. null without a
+// Prometheus station (no lamp), otherwise whether any is firing.
+function useDeviceAlerts(manager) {
+  return useSyncExternalStore(manager.subscribe, () => {
+    const a = manager.device.alerts;
+    return a ? a.external.length > 0 : null;
+  });
+}
+
+// The footer shows at most this many page keys: a window around the current
+// page, with a mark on the side where more are hidden. Keys 1–9 reach the
+// first nine pages, [ ] and ← → step through all of them.
+const PAGE_KEYS = 9;
+function pageWindow(pageNo, total) {
+  if (total <= PAGE_KEYS) return [0, total];
+  const start = Math.min(Math.max(0, pageNo - 1 - (PAGE_KEYS >> 1)), total - PAGE_KEYS);
+  return [start, start + PAGE_KEYS];
+}
+
 // The stations the current page shows, in panel order. A page that binds none
 // (only '*' panels, say) stands for every station.
 function stationsOnPage(page, byId, list) {
@@ -58,6 +77,7 @@ export default function App({ docStore, manager, device }) {
   const leadStore = lead?.store ?? noStore;
   const snap = useSyncExternalStore(leadStore.subscribe, leadStore.getSnapshot);
   const lamp = useWorstState(list);
+  const ext = useDeviceAlerts(manager);
   // The time base (S) only exists for simulated stations; a live one runs at ×1.
   const sim = list.find((s) => s.source.kind === 'SIMULATED') ?? null;
   const simStore = sim?.store ?? noStore;
@@ -89,6 +109,7 @@ export default function App({ docStore, manager, device }) {
   // a document edit may remove pages under us
   const pageNo = Math.min(Math.max(1, page), pages.length);
   const current = pages[pageNo - 1];
+  const [winStart, winEnd] = pageWindow(pageNo, pages.length);
   const onPage = useMemo(() => stationsOnPage(current, byId, list), [current, byId, list]);
   // only a simulated station can take a test incident
   const testable = useMemo(() => onPage.filter((s) => s.source.kind === 'SIMULATED'), [onPage]);
@@ -274,6 +295,8 @@ export default function App({ docStore, manager, device }) {
               a: actions.auto,
               arrowright: actions.next,
               arrowleft: actions.prev,
+              ']': actions.next,
+              '[': actions.prev,
             }[key] ?? (/^[1-9]$/.test(e.key) && +e.key <= live.current.pages.length ? () => actions.page(+e.key) : null));
       if (fn) {
         e.preventDefault();
@@ -314,7 +337,7 @@ export default function App({ docStore, manager, device }) {
               </div>
             </div>
             <div className="plate">
-              <span className="cap">Station</span>
+              <span className="cap">Station{meta.origin === 'url-local' ? ' · local copy' : ''}</span>
               <span className="plate-val">{named ? `${doc.stations.length} STATIONS` : doc.stations[0].name}</span>
             </div>
             <div className="plate">
@@ -328,6 +351,12 @@ export default function App({ docStore, manager, device }) {
                 <i className={`lamp ${lamp}`} />
                 <span className="cap">Alarm</span>
               </div>
+              {ext !== null && (
+                <div className="lampwrap" title="Prometheus alerts without a station label">
+                  <i className={`lamp ${ext ? 'DEGRADED' : 'NOMINAL'}`} />
+                  <span className="cap">Ext</span>
+                </div>
+              )}
               <Module name="System" className="status-mod">
                 <Screen inst={housing.status} />
               </Module>
@@ -363,8 +392,10 @@ export default function App({ docStore, manager, device }) {
 
           <footer className="ft">
             <div className="keys">
-              {pages.map((p, i) =>
-                editing && renaming && pageNo === i + 1 ? (
+              {winStart > 0 && <button className="keymore" onClick={actions.prev} tabIndex={-1} aria-label={`${winStart} more pages`}>◂</button>}
+              {pages.slice(winStart, winEnd).map((p, j) => {
+                const i = winStart + j;
+                return editing && renaming && pageNo === i + 1 ? (
                   <span key={p.id} className="key latch on renaming">
                     <kbd>{i + 1}</kbd>
                     <Field value={p.name} maxLength={16} autoFocus onCommit={pageOps.rename} onCancel={() => setRenaming(false)} />
@@ -373,12 +404,13 @@ export default function App({ docStore, manager, device }) {
                   <Key key={p.id} k={i + 1} onClick={() => actions.page(i + 1)} active={pageNo === i + 1}>
                     {p.name}
                   </Key>
-                ),
-              )}
+                );
+              })}
+              {winEnd < pages.length && <button className="keymore" onClick={actions.next} tabIndex={-1} aria-label={`${pages.length - winEnd} more pages`}>▸</button>}
               {editing ? (
                 <>
                   <span className="keysep" />
-                  <Key k="+" onClick={pageOps.add} disabled={pages.length >= MAX_PAGES} className="page-add">New page</Key>
+                  <Key k="+" onClick={pageOps.add} className="page-add">New page</Key>
                   <Key k="◀" onClick={() => pageOps.move(-1)} disabled={pageNo === 1} className="page-left" />
                   <Key k="▶" onClick={() => pageOps.move(1)} disabled={pageNo === pages.length} className="page-right" />
                   <Key k="✎" onClick={() => setRenaming(true)} className="page-rename">Rename</Key>

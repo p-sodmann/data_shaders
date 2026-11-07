@@ -85,7 +85,7 @@ export function createStation(def, ctx = {}) {
       links: [],
       stages: f.stages,
       stageShare: f.stageShare,
-      endpoints: f.endpoints.map((e) => [e.route, 0, e.slo ?? defaultSlo(base.thresh.warn), e.source === 'auto']),
+      endpoints: f.endpoints.map((e) => [e.route, 0, e.source === 'doc' ? e.slo : defaultSlo(e.observed ?? base.thresh.warn, base.thresh.warn), e.source === 'auto']),
       regions: f.regions.map((r) => [r.code, r.name, r.lat, r.lon, 0]),
     });
     source = createPrometheusSource({ client, station: src.station, profile, onOverflow: () => rebuild() });

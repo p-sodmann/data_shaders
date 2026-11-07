@@ -1,6 +1,6 @@
 import { createDotMatrix } from './dotmatrix.js';
 import { hms, routeLabel } from '../data/telemetry.js';
-import { fmtPeriod } from '../data/signal.js';
+import { fmtPeriod, rhythmSignals } from '../data/signal.js';
 import { worstStation } from '../station/manager.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -73,18 +73,21 @@ export function createLog(target, options = {}) {
   });
 }
 
-// Every station's events in arrival order, as one list. Rebuilt only when some
-// station logged something or the station list changed. Backfilled events have
+// Every station's events in arrival order, as one list, with the device's own
+// (alerts that name no station, without a station name). Rebuilt only when
+// something was logged or the station list changed. Backfilled events have
 // no wall time (-Infinity) and sort by their own time, before live ones.
 function mergedEvents(device) {
-  let list = null, last = [], merged = [];
+  let list = null, last = [], lastDevice, merged = [];
   const byArrival = (a, b) => (a.wall === b.wall ? a.t - b.t : a.wall < b.wall ? -1 : 1);
   return () => {
     const stations = device.stations;
-    if (list !== stations || stations.some((s, i) => s.store.events.at(-1) !== last[i])) {
+    const own = device.alerts?.events ?? [];
+    if (list !== stations || own.at(-1) !== lastDevice || stations.some((s, i) => s.store.events.at(-1) !== last[i])) {
       list = stations;
       last = stations.map((s) => s.store.events.at(-1));
-      merged = stations.flatMap((s) => s.store.events.map((e) => ({ ...e, from: s.name }))).sort(byArrival);
+      lastDevice = own.at(-1);
+      merged = [...stations.flatMap((s) => s.store.events.map((e) => ({ ...e, from: s.name }))), ...own].sort(byArrival);
     }
     return merged;
   };
@@ -252,11 +255,12 @@ export function createContacts(station, options = {}) {
             [brg, 4],
             [route, ep.state ? col : 1],
             [Math.round(ep.rps), 4],
-            [ep.p95.toFixed(1), ep.p95 >= ep.slo ? 3 : ep.p95 >= ep.slo * 0.75 ? 2 : 1],
+            // too little traffic to judge (Prometheus routes under MIN_RPS)
+            ep.low ? ['LOW', 4] : [ep.p95.toFixed(1), ep.p95 >= ep.slo ? 3 : ep.p95 >= ep.slo * 0.75 ? 2 : 1],
             // A: derived from the observed 4 h P95, not set in the document
             [ep.auto ? `${ep.slo}A` : ep.slo, 4],
-            [`${Math.round(ep.pressure * 100)}%`, col],
-            [arrow, ep.trend > 0 ? (ep.state ? col : 2) : 4],
+            ep.low ? ['', 4] : [`${Math.round(ep.pressure * 100)}%`, col],
+            [ep.low ? '' : arrow, ep.trend > 0 ? (ep.state ? col : 2) : 4],
           ],
           COLS,
           4,
@@ -317,8 +321,10 @@ export function createOrigins(station, options = {}) {
 
 // 22 RHYTHMS: the periodic components the analyser has confirmed, strongest
 // first, with their folded profile (one cycle, averaged over four hours), the
-// time of the next peak and a countdown. A rhythm that began inside the
-// window is NEW, in amber, with the time it started.
+// time of the next peak and a countdown. AMP is in the unit of the signal it
+// was found in (MS latency, % throughput), and the last column names the
+// signals. A rhythm that began inside the window is NEW, in amber, with the
+// time it started, in place of the signals.
 export function createRhythms(station, options = {}) {
   const { store, signal } = station;
   const COLS = [0, 3, 10, 16, 23, 33, 40];
@@ -350,11 +356,11 @@ export function createRhythms(station, options = {}) {
           [
             [`R${i + 1}`, 4],
             [fmtPeriod(pk.period), col],
-            [pk.amp.toFixed(1), 4],
+            [pk.signal === 'thru' ? `+${Math.round(pk.amp)}%` : `${pk.amp.toFixed(1)}MS`, 4],
             ['', 1],
             [hms(next), col],
             [inS, left < 30 ? col : 4],
-            [pk.fresh ? `NEW ${hms(pk.since).slice(0, 5)}` : '', 2],
+            pk.fresh ? [`NEW ${hms(pk.since).slice(0, 5)}`, 2] : [rhythmSignals(pk), 4],
           ],
           COLS,
           4,

@@ -46,7 +46,7 @@ proxies `/prom/*` the same way.
 
 | # | Instrument | Reads as |
 |---|---|---|
-| 14 | **Proximity** | Radar scope with one contact per endpoint. Each endpoint has a fixed bearing, and its range is its headroom. A contact at the rim is idle. A contact on the amber ring is at 75 % of its limit, and one on the orange ring is at its SLO (P95 latency or error budget, whichever is closer). The beam paints each contact as it passes, and the fading echoes behind a contact show which way it is moving. |
+| 14 | **Proximity** | Radar scope with one contact per endpoint. Each endpoint has a fixed bearing, and its range is its headroom. A contact at the rim is idle. A contact on the amber ring is at 75 % of its limit, and one on the orange ring is at its SLO (P95 latency or error budget, whichever is closer). The beam paints each contact as it passes, and the fading echoes behind a contact show which way it is moving. On a Prometheus station, a route with under 5 req/s is too sparse to judge: it is drawn dim, keeps its last range and state, and is counted as `LOW`. |
 | 15 | **Ground track** | World map of where traffic comes from. Land is shown as a dot screen, lit on the day side of the terminator. Each client region sends packets along its great-circle arc to the station, at a density set by its request rate, in its route colour. The cursor is the request-weighted centre of all traffic. Its trail over the last 4 hours is the ground track, which circles the globe westward once a day as the working day moves around the planet. |
 | 16 | **Contacts** | The radar contacts as a table: bearing, RPS, P95, SLO, percentage of limit, closing ▲ / opening ▼. |
 | 17 | **Origins** | Client regions by share of traffic, with RTT, error rate and route state. A route is DEG at 1.4× its learned RTT baseline and LOST at 2×, or when its error rate crosses the error thresholds. |
@@ -61,7 +61,7 @@ Treats the telemetry as a signal and looks at its shape rather than its current 
 | 19 | **Waterfall** | Spectrogram: one row per 30 s, each the spectrum of the 30 minutes before it, newest at the top, 4 hours deep. The top row is live: it is recomputed every 5 s and fixed at the next 30 s boundary. Each row is shown relative to its own noise floor, so a steady rhythm draws a vertical line, a job that starts or stops makes a line begin or end, and an incident is a bright horizontal smear. |
 | 20 | **X‑Y scope** | Latency (log scale) against saturation, like a scope in X‑Y mode. Load runs 0–100 %; the latency axis ranges itself over the cloud, the curve and the live beam, so an incident stays on the face. The cloud is the last 4 hours. The dotted line is the healthy operating curve (median latency at each load, learned only from samples below WARN), with its 90th-percentile edge above. The beam traces the last 3 minutes. If the beam lifts off the curve, something other than load is slowing requests down: OFF CURVE, in amber or orange. The knee is where the curve reaches 1.5× its unloaded latency. |
 | 21 | **Correlator** | Pearson correlation of every pair of signals (latency, errors, throughput, saturation and each service's load) over the last 10 minutes. A filled dot means positive correlation, a ring means negative. A pair turns amber when it departs strongly from its habit, which is the median of the 24 ten-minute windows in the last 4 hours. |
-| 22 | **Rhythms** | Periodic behaviour found by epoch folding, as in a pulsar search. For each rhythm it shows the period, its amplitude in ms, the folded one-cycle profile with the current phase, the next peak and a countdown. NEW marks a rhythm that started inside the window. Incidents (latency above WARN) are left out of the search, and multiples or aliases of a rhythm are not reported separately. |
+| 22 | **Rhythms** | Periodic behaviour found by epoch folding, as in a pulsar search. Latency and throughput are both searched, since a batch job often shows as load before it shows as latency. For each rhythm it shows the period, its amplitude (`MS` for latency, `%` of the median for throughput), the folded one-cycle profile with the current phase, the next peak, a countdown, and the signals it was found in (`LAT`, `THRU` or `LAT+THRU`). NEW, in place of the signals, marks a rhythm that started inside the window. Incidents (latency above WARN) are left out of the search, and multiples or aliases of a rhythm are not reported separately. |
 
 ### Page 5: Almanac
 
@@ -81,7 +81,7 @@ Colour is a signal, never decoration: mint is nominal, amber is warn, orange is 
 
 ## Keys
 
-`1`–`9` or `←` / `→` switch pages · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station (live stations always run at ×1) · `B` graphite or ivory finish · `E` opens the service panel (see below).
+`1`–`9` jump to the first nine pages, `←` / `→` or `[` / `]` step through all of them (the footer shows nine page keys, with `◂` / `▸` where more are hidden) · `A` auto-cycle pages · `F` fullscreen (or double-click) · `T` inject a test incident into a station on the current page (`Shift+T` picks which, when the page shows several; the key names it) · `S` time base ×1 / ×10 / ×60 for every simulated station (live stations always run at ×1) · `B` graphite or ivory finish · `E` opens the service panel (see below).
 The pointer hides after 2.5 s.
 
 ## The service panel (editing pages)
@@ -101,12 +101,16 @@ module sits on a mounting plate:
 - **Pages** (key row): `+` new page `PAGE N`, `◀ ▶` move the current page, `✎` rename it,
   `✕` delete it (press twice), `▦` add the five standard pages for a station.
 - `Ctrl/Cmd+Z` undo, `Shift+Ctrl/Cmd+Z` (or `Ctrl+Y`) redo, 50 steps; also the *Undo* and *Redo*
-  keys. `Esc` or `E` closes the housing.
+  keys. The history is saved with the document and survives a reload, as long as the document
+  that loads is still the one it leads to. `Esc` or `E` closes the housing.
 
 Every change is saved to this display's `localStorage` after half a second, except for a
 document from the URL (`?config=` or legacy parameters): the panel says *URL cartridge · not
-saved* until you press **Save as local**. A reload with the same `?config=` still loads the
-URL's document; open the display without it to get the saved copy.
+saved* until you press **Save as local**. For a `?config=` link that saves a copy for this link
+on this display, and from then on the copy wins whenever the display opens that link: the panel
+says *URL cartridge · local copy wins* and the header's Station plate *· local copy*. **Revert
+to URL** (press twice) deletes the copy and its history and reloads the link's own document.
+A document from the legacy parameters becomes the display's own document when saved.
 
 **Lock** sets `device.locked` in the document. A locked display ignores `E` and clicks on
 `SERVICE`; hold `SERVICE` for 2 s (or open the page with `?unlock=1`) to get in. The long-press
@@ -117,7 +121,8 @@ unlock lasts until the housing is closed again.
 Stations and pages come from one JSON document ([ADR-0005](../docs/adr/0005-config-document.md),
 schema in [src/config/schema.js](src/config/schema.js)). The first of these wins:
 
-1. `?config=<url>`, e.g. `?config=/examples/two-stations.json` (shipped in [public/examples/](public/examples/))
+1. `?config=<url>`, e.g. `?config=/examples/two-stations.json` (shipped in [public/examples/](public/examples/)),
+   or this display's saved copy of that link's document if there is one (`localStorage["mars.config@<url>"]`)
 2. the old station parameters `?source=`, `?station=`, `?hosts=`, `?speed=` (still work, see below)
 3. `localStorage["mars.config"]`, this display's saved copy
 4. `/config/mars.json`, the Docker config volume ([deploy/config/](../deploy/config/))
@@ -182,8 +187,12 @@ When a Prometheus station starts ([src/data/prometheus/](src/data/prometheus/)):
    requests from `query_exemplars` every 5 s, and firing alerts from `/api/v1/alerts` (those
    with a matching `station` label) every 10 s. A firing alert lights the lamp amber and
    shows on the Caution & Warning panel (`EXT ALERTS`), but MARS's own state is unchanged.
+   Firing alerts **without** a `station` label belong to the device: they light the header's
+   `EXT` lamp (shown while any station is a Prometheus one) and are logged without a station
+   name in event logs bound to *All stations*. They don't change any station's state.
 4. **Almanac.** Minutes the browser doesn't hold yet (up to 30 days) are read from Prometheus
-   (`avg_over_time(…[1m])`, 60 s steps). IndexedDB is only a cache.
+   (`avg_over_time(…[1m])`, 60 s steps; the error rate from `mars:error_ratio:rate1m`, which is
+   weighted by traffic like the live minutes). IndexedDB is only a cache.
 
 Mapping (ADR-0003): a node is **offline** when `node_up` is 0 or missing. Otherwise it is warn
 or crit when its load passes the station's `thresh.satWarn` / `satCrit`. If a second has no
@@ -199,7 +208,8 @@ Optional overrides in the station entry:
 "stages": ["ingress", "auth", "embed", "infer", "rank", "egress"]
 ```
 
-Without an `endpoints` entry, a route's P95 SLO is **2 × its observed 4-hour P95**, rounded. The
+Without an `endpoints` entry, a route's P95 SLO is **2 × its observed 4-hour P95**, rounded, and
+at least the station's `thresh.warn` (so a 5 ms route doesn't get a 10 ms SLO). The
 contacts table marks such SLOs with `A` (for example `61A`). Without `stages`, stages are ordered
 by their usual meaning (ingress/auth first, egress last), then by name. Each stage's normal
 share of the latency is learned from its 4-hour mean.

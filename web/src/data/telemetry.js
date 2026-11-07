@@ -15,6 +15,8 @@ import { toVec, fromVec } from './geo.js';
 const SEV = { NOMINAL: 0, DEGRADED: 1, INCIDENT: 2 };
 // No data for this long and a live station is STALE (its source decides).
 export const STALE_AFTER = 10;
+// requests per second a measured endpoint needs before its P95 is judged
+export const MIN_RPS = 5;
 const pad2 = (n) => String(n).padStart(2, '0');
 export const hms = (t) => {
   const d = new Date(t * 1000);
@@ -87,7 +89,7 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
     requests: [],
     // page 3: endpoints (radar contacts) and client regions (ground track)
     // auto: the SLO was derived from observed latency, not set by a person
-    endpoints: profile.endpoints.map(([route, share, slo, auto = false]) => ({ route, share, slo, rps: 0, p95: -1, err: 0, pressure: 0, trend: 0, state: 0, live: false, auto })),
+    endpoints: profile.endpoints.map(([route, share, slo, auto = false]) => ({ route, share, slo, rps: 0, p95: -1, err: 0, pressure: 0, trend: 0, state: 0, live: false, low: false, auto })),
     regions: profile.regions.map(([code, name, lat, lon]) => ({ code, name, lat, lon, rps: 0, rtt: -1, base: -1, err: 0, state: 0, live: false })),
     centroid: null, // [lat, lon] of the request-weighted traffic centre
     track: new Float32Array(TRACK_N * 2).fill(NaN),
@@ -213,6 +215,12 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
       ep.live = !!m && m.p95 >= 0;
       if (!ep.live) return;
       ep.rps = ema(ep.rps, Math.max(0, m.rps), 0.3);
+      // A measured P95 over the 10 s window from a few dozen requests swings
+      // across the SLO and back: below MIN_RPS the endpoint keeps its state
+      // and pressure (shown as LOW on the radar) until there is traffic to
+      // judge it by. Simulated endpoints have no sampling noise.
+      ep.low = caps.endpoints != null && ep.rps < MIN_RPS;
+      if (ep.low) return;
       ep.p95 = ema(ep.p95, m.p95, 0.25);
       ep.err = ema(ep.err, Math.max(0, m.err), 0.2);
       const p = Math.max(ep.p95 / ep.slo, ep.err / epErrBudget);
@@ -405,7 +413,7 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
     // { route, slo }
     addEndpoint({ route, slo }) {
       return grow('endpoints', s.endpoints.length, () => {
-        s.endpoints.push({ route, share: 0, slo, rps: 0, p95: -1, err: 0, pressure: 0, trend: 0, state: 0, live: false, auto: true });
+        s.endpoints.push({ route, share: 0, slo, rps: 0, p95: -1, err: 0, pressure: 0, trend: 0, state: 0, live: false, low: false, auto: true });
       }, `ROUTE ${routeLabel(route)}`);
     },
     // A stage nobody has seen before gets the mean share for now.

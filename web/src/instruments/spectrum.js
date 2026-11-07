@@ -1,5 +1,5 @@
 import { PH } from '../gl/palette.js';
-import { LONG, LIVE, axisX, fmtPeriod } from '../data/signal.js';
+import { LONG, LIVE, axisX, fmtPeriod, rhythmSignals } from '../data/signal.js';
 
 // 18 SPECTRUM: the amplitude spectrum of P50 latency on a period axis (long
 // periods left, short right, like frequency rising). The dim trace is the
@@ -108,7 +108,8 @@ export function createSpectrum(station, options = {}) {
           const hx = x(pk.period / k);
           v.line(hx, top + 1, hx, top + 5, c, 0.6 / Math.sqrt(k), 0.45);
         }
-        const s = fmtPeriod(pk.period);
+        // a rhythm seen in throughput is named so: this spectrum is latency's
+        const s = (pk.signals ?? ['lat']).includes('thru') ? `${fmtPeriod(pk.period)} ${rhythmSignals(pk)}` : fmtPeriod(pk.period);
         const ly = top - 12 - (i % 2) * 10;
         v.text(Math.min(R - v.textWidth(s, 1.3), Math.max(L, xx - v.textWidth(s, 1.3) / 2)), ly, s, c, 0.9, 1.3);
       });

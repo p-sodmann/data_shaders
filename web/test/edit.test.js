@@ -126,11 +126,11 @@ describe('page edits', () => {
     expect(() => deletePage(doc, 0)).toThrow(/last page/);
   });
 
-  it('stops at nine pages', () => {
+  it('has no page cap', () => {
     let doc = two();
-    for (let i = 0; i < 8; i++) doc = prepare(addPage(doc));
-    expect(doc.pages).toHaveLength(9);
-    expect(() => addPage(doc)).toThrow(/at most 9/);
+    for (let i = 0; i < 14; i++) doc = prepare(addPage(doc));
+    expect(doc.pages).toHaveLength(15);
+    expect(doc.pages.at(-1).name).toBe('PAGE 15');
   });
 
   it('adds the standard pages for a station with unique ids', () => {
@@ -140,7 +140,8 @@ describe('page edits', () => {
     // a second set for the same station gets the next free prefix
     doc = prepare({ ...doc, pages: doc.pages.slice(0, 2) });
     expect(prepare(addStandardPages(doc, 'b')).pages.slice(2).map((p) => p.id)).toEqual(['b2-tape', 'b2-orbit', 'b2-sweep', 'b2-signal', 'b2-almanac']);
-    expect(() => addStandardPages(defaultDoc(), 'main')).toThrow(/no room for 5 more pages/);
+    // the built-in document's five pages leave room for another set
+    expect(prepare(addStandardPages(defaultDoc(), 'main')).pages).toHaveLength(10);
   });
 });
 

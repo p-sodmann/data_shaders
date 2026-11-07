@@ -12,6 +12,7 @@ ADR_RULES = {
     "mars:latency_p50_ms",
     "mars:throughput_rps",
     "mars:error_ratio",
+    "mars:error_ratio:rate1m",
     "mars:saturation_ratio",
     "mars:node_up",
     "mars:node_load_ratio",

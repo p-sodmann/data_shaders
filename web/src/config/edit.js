@@ -6,8 +6,6 @@ import { standardPages } from './presets.js';
 // validates the result, so these only have to get the intent right. Pages are
 // addressed by index, panels by id within their page.
 
-export const MAX_PAGES = 9;
-
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const inside = (r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= GRID.cols && r.y + r.h <= GRID.rows;
 
@@ -109,7 +107,6 @@ export function firstStation(doc, def) {
 // ---------- pages ----------
 
 export function addPage(doc) {
-  if (doc.pages.length >= MAX_PAGES) throw new Error(`a device has at most ${MAX_PAGES} pages`);
   const n = doc.pages.length + 1;
   const id = freeId(doc.pages.map((p) => p.id), `page-${n}`);
   return { ...doc, pages: [...doc.pages, { id, name: `PAGE ${n}`, panels: [] }] };
@@ -135,9 +132,6 @@ export function deletePage(doc, pi) {
 // station id as a prefix (and a number if that is taken too).
 export function addStandardPages(doc, stationId) {
   const fresh = standardPages(stationId);
-  if (doc.pages.length + fresh.length > MAX_PAGES) {
-    throw new Error(`no room for ${fresh.length} more pages (${doc.pages.length} of ${MAX_PAGES} used)`);
-  }
   const taken = new Set(doc.pages.map((p) => p.id));
   let prefix = `${stationId}-`;
   for (let n = 2; fresh.some((p) => taken.has(prefix + p.id)); n++) prefix = `${stationId}${n}-`;

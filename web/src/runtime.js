@@ -9,10 +9,10 @@ import { createStationManager } from './station/manager.js';
 // step 08) adds, removes or rebuilds stations live.
 export async function boot() {
   const { search } = location;
-  const { doc, origin, problems } = await loadDoc({ search });
+  const { doc, origin, key, problems } = await loadDoc({ search });
   for (const p of problems) console.warn(`[MARS] config ${p}`);
 
-  const docStore = createDocStore({ doc, origin });
+  const docStore = createDocStore({ doc, origin, key });
   const manager = createStationManager();
   // subscribed before React, so stations are in place when the page re-renders
   const sync = () => {
