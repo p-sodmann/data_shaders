@@ -55,7 +55,8 @@ export function createSlices(station, options = {}) {
         for (let i = 0; i < n; i++) {
           const ms = store.hostLatAt(T, i);
           const a = (i / n) * TAU + t * 0.04;
-          const r = ms < 0 ? 0.14 : 0.2 + 0.4 * Math.min(1.2, ms / 40);
+          // full radius at two thirds of the station's scale (40 ms at the default 60)
+          const r = ms < 0 ? 0.14 : 0.2 + 0.4 * Math.min(1.2, ms / (thresh.max * (2 / 3)));
           pts.push(P(Math.cos(a) * r * 0.82, Math.sin(a) * r * 0.82 * 0.95));
           // swirl
           const load = store.hostLoads[i];

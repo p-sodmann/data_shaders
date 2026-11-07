@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parseDoc } from '../src/config/schema.js';
 import { defaultDoc } from '../src/config/load.js';
 import { standardPages } from '../src/config/presets.js';
+import { REGISTRY } from '../src/instruments/registry.js';
 
 const station = (id, extra = {}) => ({ id, name: id.toUpperCase(), source: { kind: 'sim' }, ...extra });
 const doc = (over = {}) => ({ version: 1, stations: [station('main')], pages: [{ id: 'p', name: 'P', panels: [] }], ...over });
@@ -27,6 +28,19 @@ describe('config schema v1', () => {
     const r = parseDoc(raw);
     expect(r.error).toBeUndefined();
     expect(r.doc.stations.map((s) => s.id)).toEqual(['main', 'search']);
+  });
+
+  it('accepts the Linux fleet example, with panels the registry knows at their minimum size', () => {
+    const raw = JSON.parse(readFileSync(new URL('../public/examples/linux-fleet.json', import.meta.url), 'utf8'));
+    const r = parseDoc(raw);
+    expect(r.error).toBeUndefined();
+    expect(r.doc.stations).toEqual([expect.objectContaining({ id: 'fleet', source: { kind: 'prometheus', station: 'fleet' } })]);
+    for (const q of r.doc.pages.flatMap((p) => p.panels)) {
+      const def = REGISTRY[q.type];
+      expect(def, q.type).toBeDefined();
+      expect([q.w >= def.minW, q.h >= def.minH], q.id).toEqual([true, true]);
+      expect(q.station).toBe('fleet');
+    }
   });
 
   it('accepts the ADR-0005 example (prometheus source and all)', () => {

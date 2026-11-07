@@ -1,0 +1,300 @@
+{
+  "version": 1,
+  "device": {
+    "finish": "graphite",
+    "fps": 60,
+    "dpr": 2,
+    "cycle": 0,
+    "locked": false
+  },
+  "prometheus": {
+    "url": "/prom"
+  },
+  "stations": [
+    {
+      "id": "fleet",
+      "name": "FLEET-01",
+      "source": {
+        "kind": "prometheus",
+        "station": "fleet"
+      },
+      "thresh": {
+        "warn": 1,
+        "crit": 3,
+        "max": 6,
+        "errWarn": 0.02,
+        "errCrit": 0.1,
+        "errMax": 0.25,
+        "satWarn": 0.8,
+        "satCrit": 0.92,
+        "tpMax": 5000
+      },
+      "slo": {
+        "target": 0.99,
+        "days": 30
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "fleet",
+      "name": "Fleet",
+      "panels": [
+        {
+          "id": "tape",
+          "type": "tape",
+          "station": "fleet",
+          "x": 0,
+          "y": 0,
+          "w": 8,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "load",
+          "type": "meter",
+          "station": "fleet",
+          "x": 8,
+          "y": 0,
+          "w": 4,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "nodes",
+          "type": "matrix",
+          "station": "fleet",
+          "x": 8,
+          "y": 3,
+          "w": 4,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "runq",
+          "type": "readout",
+          "station": "fleet",
+          "x": 0,
+          "y": 6,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "latency"
+          }
+        },
+        {
+          "id": "packets",
+          "type": "readout",
+          "station": "fleet",
+          "x": 2,
+          "y": 6,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "throughput"
+          }
+        },
+        {
+          "id": "stall",
+          "type": "readout",
+          "station": "fleet",
+          "x": 4,
+          "y": 6,
+          "w": 2,
+          "h": 2,
+          "options": {
+            "signal": "errors"
+          }
+        },
+        {
+          "id": "log",
+          "type": "log",
+          "station": "fleet",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "nodes",
+      "name": "Nodes",
+      "panels": [
+        {
+          "id": "lamps",
+          "type": "matrix",
+          "station": "fleet",
+          "x": 0,
+          "y": 0,
+          "w": 5,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "strands",
+          "type": "fleet",
+          "station": "fleet",
+          "x": 5,
+          "y": 0,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "slices",
+          "type": "slices",
+          "station": "fleet",
+          "x": 5,
+          "y": 3,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "xy",
+          "type": "xy",
+          "station": "fleet",
+          "x": 0,
+          "y": 4,
+          "w": 5,
+          "h": 4,
+          "options": {}
+        },
+        {
+          "id": "rules",
+          "type": "rules",
+          "station": "fleet",
+          "x": 5,
+          "y": 6,
+          "w": 3,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "nodelog",
+          "type": "log",
+          "station": "fleet",
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "signal",
+      "name": "Signal",
+      "panels": [
+        {
+          "id": "spectrum",
+          "type": "spectrum",
+          "station": "fleet",
+          "x": 0,
+          "y": 0,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "waterfall",
+          "type": "waterfall",
+          "station": "fleet",
+          "x": 0,
+          "y": 3,
+          "w": 7,
+          "h": 3,
+          "options": {}
+        },
+        {
+          "id": "xy",
+          "type": "xy",
+          "station": "fleet",
+          "x": 7,
+          "y": 0,
+          "w": 5,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "correlator",
+          "type": "correlator",
+          "station": "fleet",
+          "x": 0,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "rhythms",
+          "type": "rhythms",
+          "station": "fleet",
+          "x": 6,
+          "y": 6,
+          "w": 6,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    },
+    {
+      "id": "almanac",
+      "name": "Almanac",
+      "panels": [
+        {
+          "id": "dial",
+          "type": "dial",
+          "station": "fleet",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "heatmap",
+          "type": "heatmap",
+          "station": "fleet",
+          "x": 4,
+          "y": 0,
+          "w": 8,
+          "h": 6,
+          "options": {}
+        },
+        {
+          "id": "budget",
+          "type": "budget",
+          "station": "fleet",
+          "x": 0,
+          "y": 6,
+          "w": 3,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "burn",
+          "type": "burn",
+          "station": "fleet",
+          "x": 3,
+          "y": 6,
+          "w": 5,
+          "h": 2,
+          "options": {}
+        },
+        {
+          "id": "logbook",
+          "type": "logbook",
+          "station": "fleet",
+          "x": 8,
+          "y": 6,
+          "w": 4,
+          "h": 2,
+          "options": {}
+        }
+      ]
+    }
+  ]
+}

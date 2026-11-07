@@ -13,6 +13,7 @@ Two compose files ([ADR-0004](../docs/adr/0004-docker-compose.md)):
 | `prometheus` | `prom/prometheus:v3.16.0`, 1 s scrape and rules, exemplars, 35 d retention | `127.0.0.1:9090` (demo file), none (prod) |
 | `demo-api`, `demo-search` | the [demo service](../examples/demo/README.md) as two stations (profile `demo`) | – |
 | `loadgen` | traffic for both, with a 10-minute "day" (profile `demo`) | – |
+| `demo-host` | [mars-agent](../agent/README.md) as station `fleet`, reporting the Docker/Podman VM (profile `demo`) | – |
 
 Commands below run from the repo root. Podman works too, see [Troubleshooting](#troubleshooting).
 
@@ -43,6 +44,10 @@ docker compose -f deploy/compose.yaml exec demo-api python -c "import urllib.req
   {'Content-Type': 'application/json'}))"                   # 20 % 5xx on api for 2 minutes
 docker compose -f deploy/compose.yaml --profile demo down      # add -v to drop the data too
 ```
+
+`demo-host` reports the VM the containers run in as a one-node fleet. To see it, open
+<http://localhost:8080/?config=/examples/linux-fleet.json> (pages Fleet, Nodes, Signal,
+Almanac). The load comes mostly from the VM's disk use.
 
 ## Your own servers
 
@@ -89,6 +94,15 @@ Prometheus has no published port in the prod file. To look at its targets:
 docker compose -f deploy/compose.prod.yaml exec prometheus wget -qO- localhost:9090/api/v1/targets
 curl -s localhost:8080/prom/api/v1/targets          # the same, through MARS
 ```
+
+### Linux hosts
+
+[mars-agent](../agent/README.md) turns a Linux host into a node of a station, from `/proc`
+([ADR-0009](../docs/adr/0009-linux-hosts.md)). Start it on each host with
+`MARS_STATION=fleet docker compose -f agent/compose.yaml up -d`, list the hosts on port 9110 in
+`site/targets/fleet.yml`, and load
+[web/public/examples/linux-fleet.json](../web/public/examples/linux-fleet.json) (`?config=` or
+as `site/config/mars.json`). A host station must not share its name with a service.
 
 ### Remote servers
 
@@ -144,7 +158,7 @@ Prometheus pulls: it connects to each server's `/metrics`, nothing connects back
 
 ## Images
 
-`scripts/build-images.sh` builds `mars-web` and `mars-demo` for linux/amd64 and linux/arm64
+`scripts/build-images.sh` builds `mars-web`, `mars-demo` and `mars-agent` for linux/amd64 and linux/arm64
 (Raspberry Pi 4/5) with `docker buildx` or Podman, tagged with the version from
 [probe/src/mars_probe/_version.py](../probe/src/mars_probe/_version.py); `--push` pushes them
 to `$REGISTRY` (default `ghcr.io/p-sodmann`). A `v*` tag does the same in CI
@@ -156,7 +170,8 @@ build machine's own platform, since its output doesn't depend on the CPU.
 - [compose.yaml](compose.yaml), [compose.prod.yaml](compose.prod.yaml): the services above.
 - [prometheus/prometheus.yml](prometheus/prometheus.yml): 1 s intervals, job `mars` with
   `honor_labels: true` and file service discovery on `targets/*.yml`.
-- [prometheus/targets/](prometheus/targets/): the demo file's targets (the two demo stations).
+- [prometheus/targets/](prometheus/targets/): the demo file's targets (the two demo stations and
+  the demo agent).
 - [site/](site/): your targets and config for the prod file.
 - The recording rules are **not** in this folder: both files mount
   [probe/src/mars_probe/prometheus/](../probe/src/mars_probe/prometheus/mars.rules.yml), the

@@ -11,6 +11,24 @@ if the prod compose tag or this file don't follow it. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `mars-agent` ([agent/](agent/README.md), image `mars-agent`): a Linux host as a node of a
+  station, from `/proc` and `statvfs`, standard library only. A compose file for monitored
+  hosts (host network, `/` read-only), and a `demo-host` agent in the demo stack.
+- Recording rules for host stations (section *hosts*): run-queue wait as latency, packets as
+  throughput, memory stalls (PSI) as errors, the fullest of CPU, memory and disk as load and
+  saturation. **Metric contract change** (ADR-0003 amended, ADR-0009 new); service stations are
+  unchanged.
+- [web/public/examples/linux-fleet.json](web/public/examples/linux-fleet.json): a fleet and its
+  nodes on four pages, with thresholds for host signals.
+
+### Changed
+
+- The Fleet strands and Slices instruments scale with the station's `thresh.max` (they had
+  45 ms and 40 ms built in; the default `max` of 60 gives the same values).
+- The latency readout shows two decimals below 1 ms.
+
 ## [0.1.0] - 2026-11-07
 
 The first release: the simulator prototype becomes a display for real FastAPI servers, through

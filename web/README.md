@@ -38,7 +38,7 @@ front of everything else when `MARS_BASIC_AUTH` is set
 | # | Instrument | Reads as |
 |---|---|---|
 | 08 | **Orbit** | Service topology as a slowly turning constellation of wireframe solids. Size is load, colour is the worst host state, hosts orbit as satellites, and packets travel the call links at a density set by throughput. |
-| 09 | **Fleet** | Every node's latency over the last three minutes as one strand. A healthy fleet is a tight bundle; a sick node peels away in amber. Includes the P50 strand and the current distribution with P50, P99 and spread. |
+| 09 | **Fleet** | Every node's latency over the last three minutes as one strand. A healthy fleet is a tight bundle; a sick node peels away in amber. Includes the P50 strand and the current distribution with P50, P99 and spread. Full scale is ¾ of the station's `thresh.max`. |
 | 10 | **Pipeline** | Requests flow through the serving stages as particles. A stage taking more than its normal share of latency slows them, builds a visible queue, and is named as the bottleneck. Failed requests drop out in orange. |
 | 11 | **Slices** | Fleet fingerprints at T-10m, -5m, -2m, -60s, -10s and now, stacked like film frames (angle = node, radius = latency), above a 10-minute event timeline. |
 | 12 | **Caution & warning** | The six rules behind the alarm lamp, each with value, limit and NOM / WARN / CRIT / STALE. |
@@ -95,6 +95,10 @@ them last, under *All stations at once*.
 
 [public/examples/sixteen-stations.json](public/examples/sixteen-stations.json) runs the Fleet
 page on 16 simulated stations (`?config=/examples/sixteen-stations.json`).
+[public/examples/linux-fleet.json](public/examples/linux-fleet.json) watches a fleet of Linux
+hosts running [mars-agent](../agent/README.md), one station `fleet` with a node per host, on
+four pages: Fleet, Nodes, Signal, Almanac (`?config=/examples/linux-fleet.json`; needs
+Prometheus, see [ADR-0009](../docs/adr/0009-linux-hosts.md) for what each slot reads).
 
 Colour is a signal, never decoration: mint is nominal, amber is warn, orange is critical.
 

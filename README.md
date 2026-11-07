@@ -6,6 +6,8 @@ are CRT phosphor shaders, fed by the metrics of your own FastAPI servers.
 ```
 FastAPI app + mars-probe  ──►  Prometheus (recording rules)  ──►  MARS web app
   (Python, probe/)               (deploy/)                          (web/)
+Linux host + mars-agent   ──►
+  (agent/)
 ```
 
 The probe instruments a service, Prometheus scrapes it and pre-computes the signals the
@@ -93,6 +95,25 @@ single uvicorn process.
    `hello` is listed under *Available on Prometheus*. **Add** puts it on the device, together
    with its five standard pages if you like.
 
+## Monitor a fleet of Linux hosts
+
+New to all of this? The [step-by-step tutorial](docs/tutorial-linux-fleet.md) starts from
+installing Docker. The short version:
+
+Run [mars-agent](agent/README.md) on every host with the same station name, list the hosts in
+a target file, and load the fleet example:
+
+```bash
+MARS_STATION=fleet docker compose -f agent/compose.yaml up -d      # on each host
+echo '- targets: ["web-1.lan:9110", "web-2.lan:9110"]' > deploy/site/targets/fleet.yml
+```
+
+Then open <http://localhost:8080/?config=/examples/linux-fleet.json>. Each host is a node of
+station `fleet`: a lamp, a strand and a slice. The latency slot shows how long work waits for a
+CPU, throughput is packets per second, errors are memory stalls, and load is the fullest of CPU,
+memory and disk ([ADR-0009](docs/adr/0009-linux-hosts.md)). The demo stack runs one agent too,
+so the example works there as well.
+
 Stages, custom signals and client regions are in [probe/README.md](probe/README.md). Several
 servers, a shared config for all displays, basic auth and the security notes are in
 [deploy/README.md](deploy/README.md). A Raspberry Pi as a wall display:
@@ -103,6 +124,7 @@ servers, a shared config for all displays, basic auth and the security notes are
 ```
 web/            MARS display (Vite + React + WebGL2)        → web/README.md
 probe/          mars-probe Python package                   → probe/README.md
+agent/          mars-agent: Linux hosts as fleet nodes      → agent/README.md
 examples/demo/  demo FastAPI service + load generator       → examples/demo/README.md
 deploy/         Docker Compose, Prometheus config, kiosk    → deploy/README.md, deploy/KIOSK.md
 scripts/        check.sh (every check), build-images.sh     
@@ -118,7 +140,7 @@ service runs with `uv` ([examples/demo/README.md](examples/demo/README.md)).
 scripts/check.sh
 ```
 
-runs every check, the same as CI: probe tests and lint, the promtool rule tests, demo tests,
+runs every check, the same as CI: probe tests and lint, the promtool rule tests, agent and demo tests,
 web unit tests and build, the headless smoke test, and the compose files. It needs `uv`,
 Node 22, and Docker or Podman (or a local `promtool`). Releases: [CHANGELOG.md](CHANGELOG.md);
 a `v*` tag builds the multi-arch images and the probe wheel.

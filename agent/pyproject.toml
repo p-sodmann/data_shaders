@@ -1,0 +1,41 @@
+[project]
+name = "mars-agent"
+dynamic = ["version"]
+description = "Reports a Linux host's CPU, memory, disk and network to MARS through Prometheus"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+]
+# Standard library only, so the image is python:alpine and this package.
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+mars-agent = "mars_agent.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/mars_agent/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mars_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]

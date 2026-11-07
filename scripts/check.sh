@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs every check in the repo, the same as CI (.github/workflows/check.yml):
-#   release version, probe tests + lint, promtool rule tests, demo tests + lint,
+#   release version, probe tests + lint, promtool rule tests, agent and demo tests + lint,
 #   web vitest, web build, headless smoke, shell syntax, compose file validation.
 # Works on a fresh clone. Needs uv, Node 22 + npm, and for the rule tests and compose files
 # promtool or Docker/Podman (with docker compose, podman compose or podman-compose).
@@ -20,6 +20,10 @@ VERSION="$(scripts/version.sh)"
 grep -q "ghcr.io/p-sodmann/mars-web:$VERSION\$" deploy/compose.prod.yaml \
   || fail "deploy/compose.prod.yaml doesn't pin mars-web:$VERSION"
 grep -q "^## \[$VERSION\]" CHANGELOG.md || fail "CHANGELOG.md has no '## [$VERSION]' section"
+grep -q "^__version__ = \"$VERSION\"\$" agent/src/mars_agent/_version.py \
+  || fail "agent/src/mars_agent/_version.py isn't $VERSION"
+grep -q "ghcr.io/p-sodmann/mars-agent:$VERSION\$" agent/compose.yaml \
+  || fail "agent/compose.yaml doesn't pin mars-agent:$VERSION"
 echo "$VERSION"
 
 step "probe: pytest, ruff"
@@ -32,6 +36,14 @@ step "probe: pytest, ruff"
 
 step "probe: promtool rule tests"
 bash probe/scripts/test-rules.sh
+
+step "agent: pytest, ruff"
+(
+  cd agent
+  uv run pytest -q
+  uv run ruff check .
+  uv run ruff format --check .
+)
 
 step "demo: pytest, ruff"
 (
@@ -68,6 +80,7 @@ elif command -v podman-compose >/dev/null 2>&1; then
 else
   fail "need docker compose, podman compose or podman-compose to validate deploy/*.yaml"
 fi
+"${compose[@]}" -f agent/compose.yaml config >/dev/null
 "${compose[@]}" -f deploy/compose.yaml --profile demo config >/dev/null
 "${compose[@]}" -f deploy/compose.prod.yaml config >/dev/null
 # The prod file must not publish Prometheus (deploy/README.md#security).

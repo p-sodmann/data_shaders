@@ -153,3 +153,69 @@ groups:
           /
           (sum by (station, region) (rate(mars_client_rtt_seconds_count{region!="unknown"}[10s])) > 0)
           * 1000
+
+      # ── hosts (mars-agent, ADR-0009) ──────────────────────────────────────────────────────
+      # A host station fills the same series as a service station, from host readings instead
+      # of requests. The two never overlap: a host station has no mars_http_* series and a
+      # service has no mars_host_* series, so each rule above or below records nothing for the
+      # other kind. `mars:node_up` above already covers hosts (mars-agent exports mars_info).
+      #
+      # Node load: the fullest of CPU, memory and the root filesystem. The label_replace keeps
+      # the three terms apart so `or` keeps all of them and `max` picks the largest.
+      - record: mars:node_load_ratio
+        expr: |
+          clamp(
+            max by (station, instance) (
+              label_replace(
+                rate(mars_host_cpu_busy_seconds_total[10s]) / mars_host_cpus,
+                "term", "cpu", "", ""
+              )
+              or
+              label_replace(
+                1 - mars_host_memory_available_bytes / mars_host_memory_total_bytes,
+                "term", "mem", "", ""
+              )
+              or
+              label_replace(
+                mars_host_filesystem_used_bytes
+                / (mars_host_filesystem_used_bytes + mars_host_filesystem_avail_bytes),
+                "term", "disk", "", ""
+              )
+            ),
+            0, 1
+          )
+
+      # Latency: how long runnable work waited for a CPU, per timeslice (a mean, not a P50).
+      - record: mars:node_latency_p50_ms
+        expr: |
+          sum by (station, instance) (rate(mars_host_runqueue_wait_seconds_total[10s]))
+          /
+          (sum by (station, instance) (rate(mars_host_timeslices_total[10s])) > 0)
+          * 1000
+
+      - record: mars:latency_p50_ms
+        expr: |
+          sum by (station) (rate(mars_host_runqueue_wait_seconds_total[10s]))
+          /
+          (sum by (station) (rate(mars_host_timeslices_total[10s])) > 0)
+          * 1000
+
+      # Throughput: packets per second, both directions, over the fleet.
+      - record: mars:throughput_rps
+        expr: sum by (station) (rate(mars_host_network_packets_total[10s]))
+
+      # Errors: the share of time some task was stalled on memory (PSI), averaged over the
+      # fleet's hosts. Absent on kernels without PSI; the display reads that as 0.
+      - record: mars:error_ratio
+        expr: clamp(avg by (station) (rate(mars_host_memory_stall_seconds_total[10s])), 0, 1)
+
+      - record: mars:error_ratio:rate1m
+        expr: clamp(avg by (station) (rate(mars_host_memory_stall_seconds_total[1m])), 0, 1)
+
+      # Saturation: the fullest host. Rules in a group run in order, so this reads the node
+      # load recorded above in the same evaluation; the `and` keeps service nodes out.
+      - record: mars:saturation_ratio
+        expr: |
+          max by (station) (
+            mars:node_load_ratio and on (station, instance) mars_host_cpus
+          )

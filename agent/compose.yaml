@@ -1,0 +1,28 @@
+# mars-agent on one Linux host (README.md). Run it on every host of the fleet:
+#   MARS_STATION=fleet docker compose -f agent/compose.yaml up -d
+# then list each host in a Prometheus target file on the MARS machine:
+#   - targets: ["web-1.lan:9110", "web-2.lan:9110", "db-1.lan:9110"]
+name: mars-agent
+
+services:
+  mars-agent:
+    # Without `pull`, or before this version is published, `up` builds it from this checkout.
+    image: ghcr.io/p-sodmann/mars-agent:0.1.0
+    build: .
+    # The host's network namespace, so /proc/net/dev counts the host's own interfaces and
+    # Prometheus reaches the agent on the host's address. There is no `ports:` with it.
+    network_mode: host
+    environment:
+      # Every host of one fleet uses the same station; each host is one of its nodes.
+      MARS_STATION: ${MARS_STATION:-fleet}
+      MARS_AGENT_PORT: ${MARS_AGENT_PORT:-9110}
+      MARS_ROOTFS: /host
+    volumes:
+      # Only for the disk use of the host's root filesystem (statvfs); read-only.
+      - /:/host:ro,rslave
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:$${MARS_AGENT_PORT}/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped

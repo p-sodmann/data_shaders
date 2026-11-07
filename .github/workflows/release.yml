@@ -1,5 +1,5 @@
-# On a v* tag: the multi-arch images (amd64, arm64 for Raspberry Pi) to GHCR, tagged with the
-# version and latest, and the probe wheel and sdist as release assets. The tag must match
+# On a v* tag: the multi-arch images (web, demo, agent; amd64 and arm64 for Raspberry Pi) to
+# GHCR, tagged with the version and latest, and the probe wheel and sdist as release assets. The tag must match
 # probe/src/mars_probe/_version.py (scripts/version.sh).
 name: release
 
@@ -42,6 +42,14 @@ jobs:
           tags: |
             ghcr.io/p-sodmann/mars-demo:${{ github.ref_name }}
             ghcr.io/p-sodmann/mars-demo:latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/p-sodmann/mars-agent:${{ github.ref_name }}
+            ghcr.io/p-sodmann/mars-agent:latest
       - uses: astral-sh/setup-uv@v6
       - run: uv build
         working-directory: probe

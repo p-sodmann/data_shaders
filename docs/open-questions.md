@@ -52,6 +52,22 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   designed (ADR-0005), but Chromium prints the 404 as a console error. Harmless; Caddy could
   answer 204 for a missing `mars.json`, or the loader could ask with `HEAD` first.
 
+## Hosts (mars-agent)
+
+- **Host stations keep HTTP captions (step 13).** The latency readout says *P50 · ms* while it
+  shows run-queue wait (a mean), throughput says *req / s* for packets, and the almanac's
+  *availability SLO* is time not stalled on memory ([ADR-0009](adr/0009-linux-hosts.md),
+  option 1, the user's choice). If that confuses people, option 2 is the fix: a station kind
+  (from `mars_host_cpus` at discovery) that swaps the captions and units in the registry's
+  readout presets, the tape header and the C&W rule names.
+- **Nothing stops a host station from sharing a service's name (step 13).** Both rule sections
+  would then record the same series, Prometheus logs duplicate-sample errors, and the display
+  sees whichever won. The agent can't know the service names. Guard the host rules with
+  `unless on (station) mars_http_requests_in_flight`, or leave it to the docs (today)?
+- **Which hosts count as one fleet's disk (step 13).** Node load includes the root
+  filesystem only. Hosts whose data sits on another mount (`/var/lib/postgresql`) read as fine
+  while that one fills. A `MARS_FILESYSTEMS` list (max over them) would cover it.
+
 ## Probe
 
 - **Country headers are trusted by default (step 11).** `RegionConfig()` reads `CF-IPCountry`

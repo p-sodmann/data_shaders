@@ -83,6 +83,21 @@ services:
       # A slower station, so the two read differently on the display.
       DEMO_LATENCY_SCALE: "1.6"
 
+  # A Linux host as station `fleet` (agent/, ADR-0009): the Docker or Podman VM, seen from a
+  # container. Open http://localhost:8080/?config=/examples/linux-fleet.json to watch it.
+  demo-host:
+    profiles: [demo]
+    build: ../agent
+    image: mars-agent:local
+    environment:
+      MARS_STATION: fleet
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9110/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   loadgen:
     <<: *demo
     command: ["python", "-m", "demo.loadgen"]

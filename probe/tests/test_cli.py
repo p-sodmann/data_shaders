@@ -33,10 +33,28 @@ def test_rules_prints_the_shipped_file(capsys):
     assert out == RULES_FILE.read_text("utf-8")
 
 
+# ADR-0009: host stations fill these from mars_host_* in their own section; node_up is shared.
+HOST_RULES = {
+    "mars:latency_p50_ms",
+    "mars:throughput_rps",
+    "mars:error_ratio",
+    "mars:error_ratio:rate1m",
+    "mars:saturation_ratio",
+    "mars:node_load_ratio",
+    "mars:node_latency_p50_ms",
+}
+
+
 def test_rules_file_has_exactly_the_adr_rules():
-    names = re.findall(r"^\s*- record: (\S+)$", RULES_FILE.read_text("utf-8"), re.M)
+    text = RULES_FILE.read_text("utf-8")
+    services, _, hosts = text.partition("# ── hosts")
+    assert hosts, "no hosts section"
+    names = re.findall(r"^\s*- record: (\S+)$", services, re.M)
     assert len(names) == len(set(names))
     assert set(names) == ADR_RULES
+    host_names = re.findall(r"^\s*- record: (\S+)$", hosts, re.M)
+    assert len(host_names) == len(set(host_names))
+    assert set(host_names) == HOST_RULES
 
 
 def test_scrape_config(capsys):

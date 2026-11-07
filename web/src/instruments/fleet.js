@@ -6,11 +6,14 @@ import { PH, sevOf } from '../gl/palette.js';
 // current distribution across nodes.
 
 const SPAN = 180;
-const MAX = 45;
+// The strands' full scale, as a share of the station's thresh.max: 45 ms at
+// the default 60, and a host station's run-queue wait (a few ms) still fills it.
+const SCALE = 0.75;
 
 export function createFleet(station, options = {}) {
   const { store } = station;
   const { thresh } = station.profile;
+  const MAX = thresh.max * SCALE;
   return {
     crt: { curve: 0.025, scan: 0.8, bloom: 1.0, decay: 0.84 },
     render(gl, _state, f, v) {
@@ -23,9 +26,9 @@ export function createFleet(station, options = {}) {
       const head = (f.now / 1000) % 1; // keep the right edge alive between samples
 
       // axis furniture
-      for (let ms = 0; ms <= MAX; ms += 5) {
-        const yy = y(ms);
-        v.line(L - (ms % 25 === 0 ? 9 : 5), yy, L - 2, yy, PH.ok, 0.3, 0.45);
+      for (let k = 0; k <= 9; k++) {
+        const yy = y((k / 9) * MAX);
+        v.line(L - (k % 5 === 0 ? 9 : 5), yy, L - 2, yy, PH.ok, 0.3, 0.45);
       }
       for (let xx = L; xx < R; xx += 6) v.dot(xx, y(thresh.warn), PH.warn, 0.22, 0.5);
       v.line(L, B, R, B, PH.ok, 0.18, 0.5);

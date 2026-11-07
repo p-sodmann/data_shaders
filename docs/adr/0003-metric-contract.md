@@ -1,6 +1,6 @@
 # ADR-0003: Metric and recording-rule contract
 
-Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b) · amended 2026-11-07 in step 09 (a station's `stages` override goes before `mars_stage_info`; "first saw" means first entered) · amended 2026-11-07 in step 11 (region table and resolution, RTT buckets, `unknown` left out of all three region rules)
+Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b) · amended 2026-11-07 in step 09 (a station's `stages` override goes before `mars_stage_info`; "first saw" means first entered) · amended 2026-11-07 in step 11 (region table and resolution, RTT buckets, `unknown` left out of all three region rules) · amended 2026-11-07 in step 13 (host stations from `mars-agent`, [ADR-0009](0009-linux-hosts.md))
 
 This is the interface between `mars-probe` (step 01), the Prometheus rules (step 03) and the
 MARS Prometheus source (step 07). Change it only by editing this ADR in the same commit.
@@ -12,6 +12,9 @@ MARS Prometheus source (step 07). Change it only by editing this ADR in the same
   `^[a-z][a-z0-9-]{0,31}$`.
 - **node**: one process of a station. This is Prometheus's `instance` label. A plain uvicorn
   server is one node.
+- **host station** *(step 13)*: a fleet of Linux hosts, each running `mars-agent`; a node is
+  one host. Its raw metrics are `mars_info` and the `mars_host_*` family, listed in
+  [ADR-0009](0009-linux-hosts.md), which also says how they fill the rules below.
 
 ## Raw metrics (exposed by the probe)
 
@@ -72,6 +75,12 @@ smoothing on top. Units are already the ones MARS displays.
 | `mars:region_rps` | station, region | per-region throughput (excluding `unknown`) |
 | `mars:region_error_ratio` | station, region | per-region 5xx ratio (excluding `unknown`) |
 | `mars:region_rtt_ms` | station, region | mean of `mars_client_rtt_seconds` (excluding `unknown`). Absent without an RTT header. |
+
+Host stations *(step 13)* record `node_load_ratio`, `node_latency_p50_ms`, `latency_p50_ms`,
+`throughput_rps`, `error_ratio`, `error_ratio:rate1m` and `saturation_ratio` from `mars_host_*`
+instead, in a second section of the same group; `node_up` is shared. The mapping is in
+[ADR-0009](0009-linux-hosts.md). The two sections never record the same station, because each
+reads a metric family the other kind doesn't export.
 
 The rules file lives in **one place**:
 `probe/src/mars_probe/prometheus/mars.rules.yml`. It is shipped inside the package, printed

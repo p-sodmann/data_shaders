@@ -52,7 +52,8 @@ const READOUTS = {
   latency: {
     name: 'Latency',
     meta: 'P50 · ms',
-    preset: (t) => ({ value: (s) => s.disp?.lat, format: (v) => v.toFixed(1), max: t.max, warn: t.warn, crit: t.crit }),
+    // two decimals below 1 ms, so a sub-millisecond service or a host's run-queue wait isn't 0.0
+    preset: (t) => ({ value: (s) => s.disp?.lat, format: (v) => v.toFixed(v < 1 ? 2 : 1), max: t.max, warn: t.warn, crit: t.crit }),
   },
   throughput: {
     name: 'Throughput',

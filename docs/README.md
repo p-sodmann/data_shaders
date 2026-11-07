@@ -7,10 +7,14 @@ monitors real servers:
 ```
 FastAPI app + mars-probe  ──►  Prometheus (recording rules)  ──►  MARS web app
   (Python, probe/)               (deploy/)                          (web/)
+Linux host + mars-agent   ──►
+  (agent/)
 ```
 
 - [steps/](steps/): the implementation packages, one file per agent session, run in order.
 - [adr/](adr/): architecture decision records. These are the binding contracts that steps refer to.
+- [tutorial-linux-fleet.md](tutorial-linux-fleet.md): a beginner's tutorial for watching Linux
+  computers with mars-agent (step 13).
 - [open-questions.md](open-questions.md): unresolved questions. Add to it, and resolve
   entries as you go.
 - [implementation_prompt.md](implementation_prompt.md): the prompt to paste into a fresh agent
@@ -22,6 +26,7 @@ FastAPI app + mars-probe  ──►  Prometheus (recording rules)  ──►  MA
 /
 ├── web/                 MARS display (Vite + React + WebGL2), moved from the repo root in step 00
 ├── probe/               mars-probe Python package (FastAPI/ASGI instrumentation)
+├── agent/               mars-agent: a Linux host as a node of a station (step 13)
 ├── examples/demo/       demo FastAPI service + load generator
 ├── deploy/              docker compose, Prometheus config, Caddy
 └── docs/                this folder
@@ -44,6 +49,7 @@ FastAPI app + mars-probe  ──►  Prometheus (recording rules)  ──►  MA
 | 10 | [Cross-station instruments](steps/10-cross-station-instruments.md) | web | 07 |
 | 11 | [Regions and GeoIP](steps/11-regions-geoip.md) | probe, web | 07 |
 | 12 | [Release hardening and docs](steps/12-release.md) | all | all |
+| 13 | [Linux host agent and fleet example](steps/13-host-agent.md) | agent, probe, web | 12 |
 
 Steps 01–03 (Python and deploy) and 04–06 (web) are independent, so the two tracks can run
 in parallel. Step 07 is where they join.
