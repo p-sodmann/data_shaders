@@ -3,7 +3,15 @@ name = "mars-probe"
 dynamic = ["version"]
 description = "Prometheus instrumentation for FastAPI/Starlette apps, shaped for the MARS display"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+classifiers = [
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
 dependencies = [
     "prometheus-client>=0.20",
     "starlette>=0.37",
@@ -21,6 +29,11 @@ dev = [
     "ruff",
     "starlette>=1.10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/p-sodmann/data_shaders"
+Source = "https://github.com/p-sodmann/data_shaders/tree/main/probe"
+Changelog = "https://github.com/p-sodmann/data_shaders/blob/main/CHANGELOG.md"
 
 [project.scripts]
 mars-probe = "mars_probe.cli:main"

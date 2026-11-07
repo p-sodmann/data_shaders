@@ -17,7 +17,9 @@ def rules_text() -> str:
 def scrape_config(targets: list[str]) -> str:
     """A Prometheus file_sd snippet. The `mars` job in deploy/ picks up targets/*.yml."""
     quoted = ", ".join(f'"{t}"' for t in targets)
-    return f"# Save as deploy/prometheus/targets/<name>.yml\n- targets: [{quoted}]\n"
+    # deploy/site/targets/ is what compose.prod.yaml mounts; the demo file mounts
+    # deploy/prometheus/targets/.
+    return f"# Save as deploy/site/targets/<name>.yml\n- targets: [{quoted}]\n"
 
 
 def main(argv: list[str] | None = None) -> int:

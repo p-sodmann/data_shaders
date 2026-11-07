@@ -8,7 +8,16 @@
 :8080 {
 	encode zstd gzip
 
-	# /prom/api/v1/query → Prometheus /api/v1/query. No auth here: see deploy/README.md.
+	# Basic auth when MARS_BASIC_AUTH is set: mars-entrypoint.sh writes this file, and leaves
+	# it empty otherwise (LAN-only default).
+	import /etc/caddy/auth.caddy
+
+	# For healthchecks; never behind auth.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# /prom/api/v1/query → Prometheus /api/v1/query. Behind the basic auth above, if it is on.
 	# Prometheus runs with --web.enable-lifecycle; reload and quit stay off the LAN-facing
 	# port (use localhost:9090 for those).
 	handle /prom/-/reload {

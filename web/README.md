@@ -15,8 +15,10 @@ npm run smoke    # build, open every page headless (default doc, two-station exa
 This is the `web/` part of the MARS monorepo; see the [root README](../README.md) for the
 whole system. The dev server proxies `/prom` to Prometheus on `localhost:9090`, which is where
 the compose stack in [deploy/](../deploy/README.md) publishes it. The production image
-([Dockerfile](Dockerfile), [Caddyfile](Caddyfile)) serves the build with Caddy on port 8080 and
-proxies `/prom/*` the same way.
+([Dockerfile](Dockerfile), [Caddyfile](Caddyfile)) serves the build with Caddy on port 8080,
+proxies `/prom/*` the same way, answers `/healthz` for healthchecks, and puts basic auth in
+front of everything else when `MARS_BASIC_AUTH` is set
+([mars-entrypoint.sh](mars-entrypoint.sh), [deploy/README.md](../deploy/README.md#security)).
 
 ## What's on the panel
 
@@ -161,8 +163,9 @@ stays in view):
   device settings stay. Imports run the version migrations. **Reset** (press twice) goes back to
   the built-in document. All three are undoable.
 
-Adding a server to Prometheus is still a file in `deploy/prometheus/targets/`
-([deploy/](../deploy/README.md)); the plate lists what Prometheus already scrapes.
+Adding a server to Prometheus is still a file in `deploy/site/targets/`
+([deploy/](../deploy/README.md#your-own-servers); `deploy/prometheus/targets/` for the demo
+stack); the plate lists what Prometheus already scrapes.
 
 **Lock** sets `device.locked` in the document. A locked display ignores `E` and clicks on
 `SERVICE`; hold `SERVICE` for 2 s (or open the page with `?unlock=1`) to get in. The long-press
@@ -177,7 +180,8 @@ schema in [src/config/schema.js](src/config/schema.js)). The first of these wins
    or this display's saved copy of that link's document if there is one (`localStorage["mars.config@<url>"]`)
 2. the old station parameters `?source=`, `?station=`, `?hosts=`, `?speed=` (still work, see below)
 3. `localStorage["mars.config"]`, this display's saved copy
-4. `/config/mars.json`, the Docker config volume ([deploy/config/](../deploy/config/))
+4. `/config/mars.json`, the Docker config volume ([deploy/config/](../deploy/config/) for the
+   demo stack, [deploy/site/config/](../deploy/site/) for your own)
 5. the built-in default: one simulated station `main` with the five standard pages
 
 A document that doesn't validate is skipped with a `[MARS] config …` warning in the console.
@@ -202,7 +206,9 @@ __mars.stations()  __mars.stats()     // running stations, live GPU objects
 ## URL parameters
 
 `?fps=30&dpr=1.5&finish=ivory&page=2&cycle=120` override the document's `device` block for this
-session. `?unlock=1` lets `E` open a locked device for this session. Use `fps=30` and `dpr=1` on weak machines or 4K panels.
+session. `?unlock=1` lets `E` open a locked device for this session. Use `fps=30` and `dpr=1` on weak machines or 4K panels: `dpr` caps the browser's
+`devicePixelRatio`, so on a 4K panel at 100 % scale it needs Chromium's
+`--force-device-scale-factor=2` too ([deploy/KIOSK.md](../deploy/KIOSK.md)).
 
 The parameters from before the config document still work and describe one station:
 `?station=edge-eu-2&hosts=48&speed=10&source=/telemetry.json` (`source` is `sim` or a JSON URL).

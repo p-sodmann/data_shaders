@@ -1,0 +1,61 @@
+# MARS for your own servers: released images, no demo, Prometheus not published (step 12).
+#   docker compose -f deploy/compose.prod.yaml up -d
+# MARS: http://<this host>:8080. Your files live in deploy/site/ (see deploy/README.md):
+#   site/targets/*.yml   what Prometheus scrapes (`mars-probe scrape-config`), picked up live
+#   site/config/         config documents, served at /config/ (optional; may stay empty)
+# MARS_BASIC_AUTH='<user> <bcrypt hash>' in the environment turns on basic auth (README#security).
+name: mars-prod
+
+services:
+  mars:
+    # Pinned to the release; scripts/check.sh fails if this drifts from the probe version.
+    # `pull` fetches the published multi-arch image; without it (or before the release is
+    # published) `up` builds the same image from this checkout.
+    image: ghcr.io/p-sodmann/mars-web:0.1.0
+    build: ../web
+    ports:
+      - "8080:8080"
+    environment:
+      PROMETHEUS_URL: prometheus:9090
+      MARS_BASIC_AUTH: ${MARS_BASIC_AUTH:-}
+    volumes:
+      - ./site/config:/config:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=35d
+      - --enable-feature=exemplar-storage
+      - --web.enable-lifecycle
+    # No ports: Prometheus has no auth, and MARS reaches it over the compose network. To look
+    # at it from this machine: docker compose -f deploy/compose.prod.yaml exec prometheus \
+    #   wget -qO- localhost:9090/api/v1/targets   (or add "127.0.0.1:9090:9090" here).
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./site/targets:/etc/prometheus/targets:ro
+      # The recording rules, straight from the probe package (the only copy, ADR-0003).
+      - ../probe/src/mars_probe/prometheus:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    # A server on the Docker host itself is host.docker.internal (Docker Desktop and Podman
+    # know it; on Linux Docker Engine this line adds it).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:

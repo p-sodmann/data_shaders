@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from prometheus_client import CollectorRegistry, Gauge, Histogram
 
@@ -14,6 +15,9 @@ from .exemplars import TokenBucket
 from .exposition import MetricsApp
 from .middleware import MarsMiddleware
 from .regions import RegionConfig, RegionResolver, no_region
+
+if TYPE_CHECKING:
+    from starlette.applications import Starlette
 
 STATION_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
@@ -41,7 +45,7 @@ class Probe:
         metrics_path: str | None = "/metrics",
         stages: Iterable[str] = (),
         regions: RegionConfig | None = None,
-    ):
+    ) -> None:
         if not STATION_RE.match(station):
             raise ValueError(f"station {station!r} must match {STATION_RE.pattern}")
         self.station = station
@@ -152,7 +156,7 @@ class Probe:
 
 
 def instrument(
-    app,
+    app: Starlette,
     station: str,
     *,
     max_inflight: int | None = None,

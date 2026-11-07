@@ -108,8 +108,10 @@ docker run --rm -e LOADGEN_TARGETS=http://host.docker.internal:8001 \
        mars-demo python -m demo.loadgen                                     # the loadgen
 ```
 
-Podman works the same way (`podman build -f examples/demo/Dockerfile -t mars-demo .`). Step 03's
-compose file runs both stations and the loadgen.
+Podman works the same way (`podman build -f examples/demo/Dockerfile -t mars-demo .`).
+[deploy/compose.yaml](../../deploy/compose.yaml) (profile `demo`) runs both stations and the
+loadgen. Released images for amd64 and arm64: `ghcr.io/p-sodmann/mars-demo:<version>`
+(`scripts/build-images.sh`).
 
 ## Develop
 

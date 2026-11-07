@@ -1,0 +1,63 @@
+# Changelog
+
+One version for the whole repo: the `mars-probe` package, the `mars-web` and `mars-demo`
+images and `deploy/compose.prod.yaml` share it. It is set in one place,
+[probe/src/mars_probe/_version.py](probe/src/mars_probe/_version.py); `scripts/check.sh` fails
+if the prod compose tag or this file don't follow it. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
+[SemVer](https://semver.org/). Until 1.0, a minor version may change the metric contract
+([ADR-0003](docs/adr/0003-metric-contract.md)) or the config document
+([ADR-0005](docs/adr/0005-config-document.md)), and this file says so when it does.
+
+## [Unreleased]
+
+## [0.1.0] - 2026-11-07
+
+The first release: the simulator prototype becomes a display for real FastAPI servers, through
+Prometheus. Built in steps 00–12 ([docs/steps/](docs/steps/)).
+
+### Probe (`mars-probe`)
+
+- `instrument(app, station=…)`: pure ASGI middleware with the ADR-0003 metrics (request
+  duration by route template, method, code class and region; in-flight and its limit; process
+  CPU; exemplars) and `/metrics` in OpenMetrics or text format.
+- `stage("name")` as `with`, `async with` or decorator; `mars_stage_info` carries the pipeline
+  order (`stages=[…]`, else the order stages are first entered).
+- `probe.gauge("name")` for custom signals (`mars_signal`).
+- Client regions (`RegionConfig`): a trusted region header, CDN country headers, or GeoIP
+  (`mars-probe[geo]`), on a fixed table of 80 regions shared with the display; optional client
+  RTT from a proxy header.
+- The `mars:*` recording rules ship in the package (`mars-probe rules`), with promtool tests;
+  `mars-probe scrape-config` writes a file_sd target.
+- Typed (`py.typed`), MIT licensed, installable from git (`#subdirectory=probe`).
+
+### Display (`web/`)
+
+- One config document (ADR-0005) for stations, pages and device settings: from a `?config=`
+  URL, the `/config/` volume, localStorage or the built-in default, with migrations from the
+  old URL parameters.
+- Several stations at once, each from the simulator, a JSON poll or Prometheus (live queries,
+  a tape backfilled for up to 4 h, a 30-day almanac from `query_range`, external alerts).
+- 25 instruments in a registry, on a 12 × 8 grid of pages; five standard pages per station.
+- The service panel (`E`): layout editing with undo, the module bay, the stations plate
+  (discover stations on Prometheus, add them with their pages, edit thresholds, SLOs and
+  pipeline order) and cartridges (export and import documents).
+- Cross-station instruments: the Fleet page, a stations board and an all-stations log.
+- The world map, origins table and centre of traffic from the probe's regions.
+
+### Deploy
+
+- `deploy/compose.yaml`: MARS (Caddy, same-origin `/prom` proxy, `/config/` volume) and
+  Prometheus with 1 s scrapes and the rules mounted from the probe; profile `demo` adds two demo
+  stations and a load generator.
+- `deploy/compose.prod.yaml`: the released images, no demo, Prometheus not published, your
+  targets and config in `deploy/site/`.
+- Multi-arch images (amd64, arm64) for `mars-web` and `mars-demo`: `scripts/build-images.sh`
+  and the release workflow, to `ghcr.io/p-sodmann/`.
+- `MARS_BASIC_AUTH` turns on basic auth for everything but `/healthz`; LAN-only otherwise.
+- `deploy/KIOSK.md`: a Raspberry Pi 5 or mini PC as a wall display.
+- `scripts/check.sh` runs every check; CI runs it and brings the demo stack up under Docker
+  Compose.
+
+[Unreleased]: https://github.com/p-sodmann/data_shaders/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/p-sodmann/data_shaders/releases/tag/v0.1.0

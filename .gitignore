@@ -8,3 +8,5 @@ __pycache__/
 *.egg-info/
 web/test-results/
 web/snapshots/
+# may hold MARS_BASIC_AUTH
+deploy/.env

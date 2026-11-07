@@ -5,11 +5,19 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 ## Config and stations
 
+- **Shared config across displays: `PUT /config/mars.json` (deferred in step 12).** Decided on
+  2026-11-06: a small upload handler next to Caddy, enabled only when basic auth is on, and the
+  step 08 editor's save calls it; Caddy's `file_server` stays read-only. Step 12 built the auth
+  half (`MARS_BASIC_AUTH`, ADR-0008) but deferred the handler (user's decision, 2026-11-07):
+  Caddy can't write files without a plugin, so it needs a small write server in the `mars`
+  image (or a custom Caddy build with WebDAV), a writable config volume, and a *Save to server*
+  key on the Workbench. Until then a display's edits stay in its localStorage, and sharing means
+  exporting a cartridge and saving it as `deploy/site/config/mars.json`.
 - **Should MARS manage Prometheus scrape targets? (step 09)** The stations plate lists what
   Prometheus already scrapes, and adding a server is still a file in
-  `deploy/prometheus/targets/` (`mars-probe scrape-config`). The plate could write that file
-  (an "Add server" field with host:port) through the same upload handler as the step 12 config
-  PUT, behind `MARS_BASIC_AUTH`. That gives a browser write access to Prometheus's
+  `deploy/site/targets/` (`mars-probe scrape-config`). The plate could write that file
+  (an "Add server" field with host:port) through the same upload handler as the deferred config
+  PUT above, behind `MARS_BASIC_AUTH`. That gives a browser write access to Prometheus's
   configuration, so it needs a decision on whether that is wanted.
 - **Route SLO, stage order, name and home edits restart the station (step 09).** Only
   thresholds retune a running station. The other edits replace it, and a Prometheus station
@@ -30,6 +38,20 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
   while `log` keeps its `*` binding (the Twin page uses it). Keep both, or migrate `log` + `*`
   to `stationLog` and drop scope `either`?
 
+- **Narrow and portrait screens (decided in step 05, never built).** The decision was: below
+  5:4, wrap the footer keys onto a second row and shrink the header tubes so the device fits the
+  viewport. The step 12 sweep found only the original one-column `max-aspect-ratio: 5/4` rule
+  from step 00 in `web/src/style.css`. Related to the footer entry above.
+- **Long station names (decided in step 06, never confirmed built).** The decision was: the
+  System tube cuts a name to about 12 characters, module headers keep the full name, the schema
+  limit stays 24. The System tube now shows the device status rather than a station name, so
+  this may be moot; check module headers and the station board with a 24-character name.
+
+- **A fresh prod display logs a 404 (step 12).** With `deploy/site/config/` empty,
+  `/config/mars.json` answers 404 and the loader falls back to the built-in document, as
+  designed (ADR-0005), but Chromium prints the 404 as a console error. Harmless; Caddy could
+  answer 204 for a missing `mars.json`, or the loader could ask with `HEAD` first.
+
 ## Probe
 
 - **Country headers are trusted by default (step 11).** `RegionConfig()` reads `CF-IPCountry`
@@ -45,7 +67,19 @@ to **Resolved** with the answer, the date and the step or ADR that settled them.
 
 ## Deploy
 
-Nothing open.
+Three follow-ups from steps 02 and 03 were decided on 2026-11-06 but never built (found in the
+step 12 sweep; user's decision to reopen rather than build them in step 12):
+
+- **`LOADGEN_TZ` for the daily phase.** Add `LOADGEN_TZ` (IANA name, default UTC) so the
+  loadgen's daily sine peaks in local afternoon; compose passes `${TZ:-UTC}`. Today the phase
+  is UTC (low at 03:00, high at 15:00).
+- **Demo targets in their own directory.** `deploy/prometheus/targets/demo.yml` is mounted
+  without the `demo` profile too, so a plain `compose.yaml` stack has two down targets. The
+  decision was a directory that only the demo resolves. `compose.prod.yaml` (step 12) mounts
+  `deploy/site/targets/` instead, so this only affects the demo file.
+- **Scrape interval 5 s by default, 1 s for demo jobs.** `prometheus.yml` still scrapes
+  everything every 1 s. Revisit once real series counts are known; the rules' `[1m]` windows
+  work with either.
 
 ## Resolved
 
@@ -59,7 +93,7 @@ gets built.
   reach PyPI. `podman machine stop && podman machine start` fixed it (both lookups 0.03 s);
   `podman-compose --profile demo build` then built both images (`npm ci`: 51 packages in 2 s),
   and the rebuilt `mars-web` serves the Fleet page live. Worth a line in the deploy docs: after
-  a network change, restart the Podman machine. → step 12.
+  a network change, restart the Podman machine. *In deploy/README.md since step 12.*
 - **Fleet page frame time, 2 against 16 stations (step 10).** Resolved 2026-11-07, before
   step 12. On a real GPU (Apple M4 Pro, ANGLE Metal, 60 Hz vsync) the frame interval is
   16.83 / 16.67 / 16.67 ms at 2 / 5 / 16 stations (−1.0 %), with no dropped frames. "Frame time"
@@ -105,20 +139,11 @@ gets built.
 
 - **Bank divider rule (step 05):** keep the plain grid gap. Pages get no `dividers` field, so
   the step 08 editor has nothing extra to place. 2026-11-06.
-- **Portrait and narrow screens overflow sideways (step 05):** below 5:4, the footer keys wrap
-  onto a second row and the header tubes shrink, so the device fits the viewport. A small CSS
-  fix. → follow-up to steps 05/06.
-- **Shared config across displays (`PUT /config/mars.json`):** a small upload handler next to
-  Caddy, enabled only when `MARS_BASIC_AUTH` is set. Caddy's `file_server` stays read-only.
-  The step 08 editor's save calls it once it exists. → step 12.
 - **Changing a station recreates it (step 06):** accepted. Any edit to a station entry rebuilds
   the station. Prometheus stations refill from Prometheus, and edits are rare, so thresholds
   stay frozen in the profile. 2026-11-06. *Changed in step 09: a change to `thresh` alone
   retunes the running station and keeps its tape (the step's criterion "threshold edits take
   effect live without losing the tape"). Everything else still recreates it. 2026-11-07.*
-- **Long station names in the System tube (step 06):** the tube shows the name cut to about
-  12 characters, and module headers keep the full name. The schema limit stays at 24.
-  → follow-up to step 06.
 
 - **JSON polling source in the config document:** accept it. ADR-0005 gets a third source kind,
   `{ kind: 'poll', url, hosts }`, next to `sim` and `prometheus`, so custom JSON feeds keep
@@ -140,8 +165,6 @@ gets built.
 - **One Prometheus for all servers:** yes, a single `PROMETHEUS_URL`. More servers are scraped by
   that Prometheus, or remote-write into it. No per-station backend field. Built in step 07: every
   Prometheus station uses the document's `prometheus.url`, 2026-11-06.
-- **Scrape interval:** 5 s by default, 1 s for the demo jobs so the Signal page stays meaningful.
-  Revisit once real series counts are known. → step 03 follow-up.
 - **Routes, stages, regions or nodes that appear at runtime:** the telemetry store reserves spare
   slots and fills them as new labels appear, keeping short-term state. It rebuilds only when the
   slots run out, and an overflow lamp shows when that happens. Built in step 07
@@ -160,31 +183,29 @@ gets built.
   Prometheus stations. Built in step 07 (the key reads `Time ×1 live` without sim stations),
   2026-11-06.
 - **Exposure:** LAN-only by default. Setting `MARS_BASIC_AUTH` turns on Caddy `basic_auth` for
-  everything, `/prom` included. → step 12.
+  everything, `/prom` included. *Built in step 12: everything but `/healthz`, through the
+  image's entrypoint ([ADR-0008](adr/0008-release-and-exposure.md)), 2026-11-07.*
 - **Lifecycle API:** keep `--web.enable-lifecycle`. Caddy already refuses `/-/reload` and
   `/-/quit`, and :9090 is loopback-only.
-- **Demo targets without the demo:** demo targets move to their own directory, which only the
-  `demo` profile mounts or resolves, so a plain stack has no down targets. → step 03 follow-up.
 - **Remote servers:** pull. Prometheus scrapes over the network, and the docs cover firewall
-  rules and an optional TLS / basic-auth scrape config. → step 12.
+  rules and an optional TLS / basic-auth scrape config. *Written in step 12
+  (deploy/README.md, Remote servers), 2026-11-07.*
 - **Pages per server or mixed pages:** both stay allowed. Ship a preset generator ("the 5
   standard pages for station X"). Built in step 06: `standardPages(id, prefix)` in
   `web/src/config/presets.js`, also on `window.__mars`, 2026-11-06.
 - **Aspect ratio:** responsive variants. The layout reflows per screen size, not one fixed
   panel per device. → step 05/06.
-- **Config persistence across displays:** Caddy accepts `PUT /config/mars.json`, only when basic
-  auth is on, otherwise read-only. localStorage stays as a per-display override. Step 06 built
-  the read side and localStorage; the PUT is open again under "Config and stations".
 - **CI:** step 12 adds a GitHub Actions workflow: probe pytest + ruff, web build + Playwright
-  smoke.
-- **Daily phase in UTC:** add `LOADGEN_TZ` (IANA name, default UTC). Compose passes
-  `${TZ:-UTC}`. → step 02 follow-up.
-- **Licence:** MIT. → step 12.
-- **Package name:** `mars-probe` is free on PyPI (checked 2026-11-06). Check again just before
-  publishing. → step 12.
+  smoke. *Built in step 12: `.github/workflows/check.yml` runs `scripts/check.sh` and brings the
+  demo stack up under Docker Compose; `release.yml` builds the images on a `v*` tag. Not run on
+  GitHub yet (nothing pushed), 2026-11-07.*
+- **Licence:** MIT. *Added in step 12 (`LICENSE`, probe metadata), 2026-11-07.*
+- **Package name:** `mars-probe` is free on PyPI (checked 2026-11-06, and again 2026-11-07 in
+  step 12). Kept; not published to PyPI yet (ADR-0008).
 - **Podman / compose:** `podman-compose -f deploy/compose.yaml --profile demo up -d` brings the
   stack up healthy (build the demo image once first, since podman-compose builds it three times in
-  parallel). Real Docker Compose is left to the step 12 CI. 2026-11-06, step 03.
+  parallel). Real Docker Compose is left to the step 12 CI (the `stack` job; not run yet). 2026-11-06,
+  step 03.
 - **Other frameworks:** ASGI only for now. Add Flask/WSGI only if someone asks for it, since
   WSGI needs multiprocess handling (gunicorn workers).
 

@@ -23,4 +23,7 @@ Status: accepted · 2026-11-05
 
 - MARS itself is static files. The container just bundles Caddy so the Prometheus proxy is
   same-origin, which means no CORS setup.
+- *Step 12:* `deploy/compose.prod.yaml` runs the released images for your own servers, with
+  targets in `deploy/site/targets/` and Prometheus unpublished; `/healthz` and
+  `MARS_BASIC_AUTH` were added to the image ([ADR-0008](0008-release-and-exposure.md)).
 - `npm run dev` stays the inner loop. Vite's dev server proxies `/prom` to `localhost:9090`.

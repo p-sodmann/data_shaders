@@ -27,4 +27,5 @@ start (`docker compose -f deploy/compose.yaml up`).
 
 - A change to a metric or rule can update the probe, the rules and the web source in one commit.
 - No JS workspace tooling is needed (there is only one JS package). Python packages are linked
-  by path, not published, until step 12.
+  by path, not published, until step 12. *Step 12: the probe keeps the name `mars-probe` and is
+  installed from git or the wheel on a GitHub release; see [ADR-0008](0008-release-and-exposure.md).*

@@ -32,13 +32,15 @@ services:
       - "8080:8080"
     environment:
       PROMETHEUS_URL: prometheus:9090
+      # '<user> <bcrypt hash>' turns on basic auth (deploy/README.md#security). Unset: none.
+      MARS_BASIC_AUTH: ${MARS_BASIC_AUTH:-}
     volumes:
       # Config documents, served at /config/ (step 06). May stay empty.
       - ./config:/config:ro
     depends_on:
       - prometheus
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
       interval: 5s
       timeout: 3s
       retries: 5

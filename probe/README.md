@@ -5,16 +5,20 @@ Prometheus instrumentation for FastAPI and Starlette apps, shaped for the
 
 ## Install
 
-Not on PyPI yet. Install from a path or from git:
+Not on PyPI yet (the name `mars-probe` is free and kept for it). Install from git or a path:
 
 ```bash
+pip install "mars-probe @ git+https://github.com/p-sodmann/data_shaders#subdirectory=probe"
+uv add "mars-probe @ git+https://github.com/p-sodmann/data_shaders#subdirectory=probe"
+pip install "mars-probe @ git+https://github.com/p-sodmann/data_shaders@v0.1.0#subdirectory=probe"  # a release
 uv add ./probe                                                    # path (inside this repo)
-uv add "mars-probe @ git+https://<repo-url>#subdirectory=probe"   # git
-pip install -e ./probe                                            # plain pip
 ```
 
 Python ≥ 3.11. Dependencies: `prometheus-client`, `starlette`. GeoIP region lookup needs the
-`geo` extra (`uv add "./probe[geo]"`, which adds `geoip2`).
+`geo` extra (`"mars-probe[geo] @ git+…"`, which adds `geoip2`). The package is typed
+(`py.typed`), so mypy and pyright check calls to `instrument`, `stage` and `RegionConfig`.
+Each release also has the wheel attached on GitHub; changes are in
+[CHANGELOG.md](../CHANGELOG.md).
 
 ## Use
 
@@ -155,6 +159,10 @@ uv run pytest -q                  # -m "not slow" skips the overhead benchmark
 uv run ruff check . && uv run ruff format --check .
 uv run mars-probe version
 bash scripts/test-rules.sh        # promtool tests for the rules (local promtool, docker or podman)
+uv build                          # wheel and sdist in dist/
 ```
+
+The version is set in one place, [src/mars_probe/_version.py](src/mars_probe/_version.py); the
+images and `deploy/compose.prod.yaml` follow it (`scripts/check.sh` at the root checks that).
 
 `uv run pytest` also runs the rule tests when `promtool` is on `PATH`, and skips them otherwise.
