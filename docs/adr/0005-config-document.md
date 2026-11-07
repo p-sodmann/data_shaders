@@ -1,6 +1,6 @@
 # ADR-0005: Stations and layout live in one config document
 
-Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides)
+Status: accepted · 2026-11-05 · amended 2026-11-06 (step 06: poll source, `*` binding, legacy URL in the load order; step 07: `endpoints` and `stages` overrides) · amended 2026-11-07 (step 08b: saved copies of `?config=` documents, auto SLO floor, no page cap)
 
 ## Context
 
@@ -46,7 +46,8 @@ One JSON document (a "cartridge") describes the device. It is validated with **z
   `sim` and `poll`.
 - Prometheus stations take two more overrides, which other kinds ignore *(added in step 07)*:
   `endpoints: [{ route, slo }]` (P95 SLO in ms for a route, listed even before it has
-  traffic; without it a route's SLO is 2 × its observed 4-hour P95, rounded) and
+  traffic; without it a route's SLO is 2 × its observed 4-hour P95, rounded, and at least the
+  station's `thresh.warn` *(floor added in step 08b)*) and
   `stages: ["ingress", …]` (pipeline order; stages not listed follow, ordered by name).
   Entities that appear later fill spare slots ([ADR-0007](0007-runtime-entities.md)).
 - **Source kinds:** `{ kind: "sim", hosts, seed?, speed? }`,
@@ -58,15 +59,19 @@ One JSON document (a "cartridge") describes the device. It is validated with **z
 - **Panel**: `type` is a key in the instrument registry. `station` is required for
   per-station instruments and absent for cross-station ones. `station: "*"` binds an
   instrument with registry scope `either` (the event log, from step 06) to every station at
-  once. Positions are on a grid of **12 columns × 8 rows** that fills the deck area. Panels may
+  once. Positions are on a grid of **12 columns × 8 rows** that fills the deck area.
+  A document has at least one page and no maximum *(the cap of 9 was dropped in step 08b)*. Panels may
   not overlap. Station, page and per-page panel ids are unique. Unknown keys are dropped on
   load, except inside a panel's `options`, which belong to the instrument and are kept.
-- **Load order** (first match wins): `?config=<url>`, then the legacy station parameters
+- **Load order** (first match wins): `localStorage["mars.config@<url>"]` when `?config=<url>`
+  is given (a saved copy of that URL's document, *added in step 08b*), then `?config=<url>`, then the legacy station parameters
   (`?source=`, `?station=`, `?hosts=`, `?speed=`, read as a v0 document), then
   `localStorage["mars.config"]`, then `/config/mars.json` (the Docker volume), then the
   built-in default (today's 5 pages bound to one `sim` station). A source that exists but
   doesn't validate is skipped with a console warning. Documents from the URL are read-only:
-  they are not saved to localStorage unless the user saves them.
+  they are not saved to localStorage unless the user saves them. *Save as local* on a
+  `?config=` document writes it to `mars.config@<url>`, so the copy wins on this display for
+  that link only, and *Revert to URL* deletes it. The legacy parameters get no saved copy.
 - Every saved document has `version`. Loaders migrate older versions forward with explicit
   functions in `web/src/config/migrations.js`. A document without `version` is v0: the
   pre-document device, one station described by the legacy fields above.

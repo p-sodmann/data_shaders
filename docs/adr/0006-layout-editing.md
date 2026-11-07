@@ -1,6 +1,6 @@
 # ADR-0006: Layout editing with react-grid-layout
 
-Status: accepted · 2026-11-05 · amended 2026-11-06 (step 08: how react-grid-layout is used)
+Status: accepted · 2026-11-05 · amended 2026-11-06 (step 08: how react-grid-layout is used) · amended 2026-11-07 (step 08b: no page cap, undo kept across reloads)
 
 ## Decision
 
@@ -30,7 +30,12 @@ Status: accepted · 2026-11-05 · amended 2026-11-06 (step 08: how react-grid-la
 - **The editor is a lazily loaded chunk** (`React.lazy`), so a display that is never edited
   doesn't download react-grid-layout.
 - Edits are pure functions on the document (`web/src/config/edit.js`). The doc store validates
-  the result and keeps an undo stack of 50 frozen snapshots.
+  the result and keeps an undo stack of 50 frozen snapshots. *(Step 08b:)* the stack is saved
+  with the document under `mars.undo@<document key>` and used after a reload only if its newest
+  snapshot equals the loaded document. A read-only URL document keeps undo in memory.
+- *(Step 08b:)* pages have no cap. Keys `1`–`9` jump to the first nine pages, `←` / `→` and
+  `[` / `]` step through all of them, and the footer shows a window of nine page keys with a
+  mark on the side where more are hidden.
 
 ## Alternatives considered
 

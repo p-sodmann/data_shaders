@@ -1,6 +1,6 @@
 # ADR-0003: Metric and recording-rule contract
 
-Status: accepted · 2026-11-05
+Status: accepted · 2026-11-05 · amended 2026-11-07 (`mars_stage_info`, built in step 09; `mars:error_ratio:rate1m`, built in step 08b)
 
 This is the interface between `mars-probe` (step 01), the Prometheus rules (step 03) and the
 MARS Prometheus source (step 07). Change it only by editing this ADR in the same commit.
@@ -23,6 +23,7 @@ MARS Prometheus source (step 07). Change it only by editing this ADR in the same
 | `mars_http_requests_in_flight_limit` | gauge | `station` | `max_inflight` from the probe config. 0 means unset. |
 | `mars_process_cpu_seconds_total` | counter | `station` | `time.process_time()` of the process. |
 | `mars_stage_duration_seconds` | histogram | `station`, `stage` | Time spent inside `with stage("name")`. |
+| `mars_stage_info` | gauge (=1) | `station`, `stage`, `order` | Pipeline position of a stage, from `instrument(app, stages=[…])`, else the order in which the process first saw each stage. *(Step 09.)* |
 | `mars_client_rtt_seconds` | histogram | `station`, `region` | Optional (step 11). Client RTT taken from a trusted proxy header. |
 | `mars_signal` | gauge | `station`, `signal` | Optional custom signals (`probe.gauge("queue_depth")`). |
 
@@ -52,6 +53,7 @@ smoothing on top. Units are already the ones MARS displays.
 | `mars:latency_p50_ms` | station | `histogram_quantile(0.5, sum by (station, le) (rate(mars_http_request_duration_seconds_bucket[10s]))) * 1000` |
 | `mars:throughput_rps` | station | `sum by (station) (rate(mars_http_request_duration_seconds_count[10s]))` |
 | `mars:error_ratio` | station | 5xx rate ÷ total rate. `0` when there is traffic but no errors, absent when there is no traffic. |
+| `mars:error_ratio:rate1m` | station | as `error_ratio` over `[1m]`. The almanac reads it, so backfilled minutes are weighted by throughput. *(Step 08b.)* |
 | `mars:saturation_ratio` | station | max of (in_flight ÷ limit, where limit > 0) and max node CPU load, clamped to 0..1 |
 | `mars:node_up` | station, instance | `max by (station, instance) (up * on (job, instance) group_left (station) last_over_time(mars_info[1h]))` |
 | `mars:node_load_ratio` | station, instance | `clamp_max(rate(mars_process_cpu_seconds_total[10s]), 1)` |
@@ -75,7 +77,7 @@ by `mars-probe rules`, and mounted directly by `deploy/compose.yaml`. It is cove
 |---|---|
 | `latency`, `throughput`, `errorRate`, `saturation` | the station-level rules |
 | `hosts[i].load / state / latency` | `node_load_ratio`, `node_up` (0 means offline), `node_latency_p50_ms`. Warn and crit come from MARS thresholds on load. |
-| `stages` | `stage_mean_ms`, in discovered order |
+| `stages` | `stage_mean_ms`, ordered by `mars_stage_info` (from step 09), then the station's `stages` override, then by name |
 | `endpoints` | `endpoint_*` by route |
 | `regions` | `region_*` by region |
 | `requests` | exemplars |

@@ -13,36 +13,36 @@ gets built.
 - **Standard pages and the 9-page cap (step 08):** drop the cap. The schema has no maximum page
   count, so "Add standard pages for station…" always fits. Keys `1`–`9` still jump to the first
   nine pages, and `[` / `]` step through all of them. ADR-0006 and `MAX_PAGES` in
-  `web/src/config/edit.js` change. → follow-up to step 08. 2026-11-07.
+  `web/src/config/edit.js` change. → step 08b. 2026-11-07.
 - **A saved `?config=` document still loses to the URL (step 08):** the saved copy wins. *Save
   as local* stores the document under a key for the `?config=` URL, and that copy overrides the
   URL on that display. The header shows a LOCAL marker, and *Revert to URL* clears the copy.
-  ADR-0005 load order changes. → follow-up to step 08. 2026-11-07.
+  ADR-0005 load order changes. → step 08b. 2026-11-07.
 - **Undo history is in memory only (step 08):** persist it to localStorage. Keep the last 50
   snapshots under the same key as the document (built-in, or the `?config=` URL). Drop the
   history when its newest snapshot doesn't match the loaded document, for example after a
-  shared PUT or a changed URL. → follow-up to step 08. 2026-11-07.
+  shared PUT or a changed URL. → step 08b. 2026-11-07.
 - **Nodes that go away stay offline (step 07):** accepted. A node that leaves Prometheus keeps
   its slot and shows as offline until a reload, so a scale-down counts as NODES DOWN
   ([ADR-0007](adr/0007-runtime-entities.md) unchanged). 2026-11-07.
 - **Stage order isn't in the metrics (step 07):** the probe exports `mars_stage_info{stage,
-  order}`, with the order taken from declaration order or an explicit argument (an ADR-0003
-  change). The web side uses it first, then the `stages` override, then the name heuristic.
-  → follow-up to steps 01/07. 2026-11-07.
+  order}`, with the order from `instrument(app, stages=[…])`, else the order in which the
+  process first saw each stage (an ADR-0003 change). The web side uses it first, then the `stages` override, then the name heuristic.
+  → step 09. 2026-11-07.
 - **External alerts without a `station` label (step 07):** they light a device-level
   `EXT ALERTS` lamp that isn't tied to a station, and log as `EXT ALERT … FIRING` without a
-  station. → follow-up to step 07. 2026-11-07.
+  station. → step 08b. 2026-11-07.
 - **Almanac error rate from Prometheus (step 07):** add a recording rule
   `mars:error_ratio:rate1m` = `sum(rate(...5xx[1m])) / sum(rate(...[1m]))` per station. The
   almanac backfill reads it, so backfilled minutes are throughput-weighted like live ones.
-  → follow-up to steps 03/07. 2026-11-07.
+  → step 08b. 2026-11-07.
 - **Auto SLOs of small, fast routes flap (step 07):** both fixes. An auto SLO is
   `max(2 × P95, thresh.warn)`. Below a minimum rate (about 5 req/s, or fewer than 50 samples
   in the window) an endpoint keeps its last state and shows LOW N instead of changing state.
-  → follow-up to step 07. 2026-11-07.
+  → step 08b. 2026-11-07.
 - **Rhythms can't see the demo's batch job (step 07):** the analyser folds throughput as well
   as latency and reports which signal a rhythm is in (for example `5m · THRU`). Step 07's
-  criterion "Rhythms finds the 5-minute batch job" waits on this. → follow-up to step 07.
+  criterion "Rhythms finds the 5-minute batch job" waits on this. → step 08b.
   2026-11-07.
 
 - **Bank divider rule (step 05):** keep the plain grid gap. Pages get no `dividers` field, so

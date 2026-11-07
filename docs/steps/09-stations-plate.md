@@ -1,7 +1,7 @@
 # Step 09: Stations plate and cartridges
 
 Status: todo
-Depends on: 07, 08
+Depends on: 07, 08, 08b
 Read first: [ADR-0002](../adr/0002-prometheus-backend.md), [ADR-0005](../adr/0005-config-document.md)
 
 ## Context
@@ -31,7 +31,8 @@ discovery from Prometheus. Also export and import of the whole document as a car
   - SLO (target, days)
   - home location (lat/lon, or pick from the regions table)
   - per-endpoint SLO overrides, listing the discovered routes
-  - pipeline stage order
+  - pipeline stage order, defaulting to the order the probe exports in `mars_stage_info`
+    (ADR-0003, amended 2026-11-07)
   Every field shows its default when empty. Fields are validated by the zod schema, and an
   invalid value is shown on the field.
 - **Removing a station** that panels still use asks to either remove those panels or rebind
@@ -45,13 +46,20 @@ discovery from Prometheus. Also export and import of the whole document as a car
   - `RESET` returns to the default document (with confirmation).
   - Imports run the migrations.
 
+- **Stage order from the probe:** `mars-probe` exports `mars_stage_info{station, stage,
+  order}` (gauge = 1). The order comes from `instrument(app, stages=[…])`, else from the order
+  in which the process first saw each stage. The Prometheus source orders stages by it, then
+  by the station's `stages` override, then by name.
+
 ## Tasks
 
 1. The stations plate UI, in the same visual language as step 08.
 2. A discovery client (reuse the step 07 Prometheus client).
 3. Export, import with merge, and reset.
 4. The "remove station still in use" flow.
-5. Smoke test: with a recorded Prometheus fixture served by the preview server (mock the `/prom`
+5. `mars_stage_info` in the probe (with a pytest case and an `instrument(stages=…)` argument),
+   and stage ordering by it in the Prometheus source.
+6. Smoke test: with a recorded Prometheus fixture served by the preview server (mock the `/prom`
    routes in Playwright), discover `api`, add it with its standard pages, export, reset, import,
    and check the result is the same.
 
