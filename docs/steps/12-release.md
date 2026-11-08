@@ -102,7 +102,7 @@ the open questions in a clean state.
 
 - **Web image build stage on the build platform.** Under QEMU x86_64 emulation on this arm64
   host, esbuild (Go) crashes in `vite build` (`fatal error: lfstack.push`). The build output
-  doesn't depend on the CPU, so `FROM --platform=$BUILDPLATFORM node:22-alpine AS build`; only
+  doesn't depend on the CPU, so `FROM --platform=$BUILDPLATFORM node:26.13.0-alpine AS build`; only
   the Caddy stage is per-arch. Also faster (39 s for both images, both arches, warm cache).
 - **`compose.prod.yaml` has a `build:` fallback** next to the pinned image, because the image
   isn't published until a `v0.1.0` tag is pushed. `pull` then reports 403 and `up` builds.

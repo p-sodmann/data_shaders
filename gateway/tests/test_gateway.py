@@ -197,3 +197,81 @@ def test_key_creation_wants_json(server):
     assert call("POST", f"{server}/api/keys", "name=x&station=web", form)[0] == 415
     status, body = call("POST", f"{server}/api/keys", "{}", {"Content-Type": "application/json"})
     assert status == 400 and "name" in json.loads(body)["error"]
+
+
+def test_key_rotation_has_one_node_and_revocation_respects_new_owner(keys):
+    clock = Clock()
+    board = Board(clock=clock)
+    old, _ = keys.create("old", "api")
+    new, _ = keys.create("new", "api")
+    board.push(old, "node", AGENT, "text/plain")
+    clock.t += 6
+    board.push(new, "node", AGENT, "text/plain")
+    board.revoke(old.id)
+    out = scrape(board)
+    assert out.count('mars_push_up{instance="node",station="api"}') == 1
+    assert 'mars_push_up{instance="node",station="api"} 1.0' in out
+    assert board.clients(old.id) == []
+    assert board.clients(new.id)[0]["live"]
+    board.revoke(new.id)
+    assert 'mars_push_up{instance="node",station="api"} 0.0' in scrape(board)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "# TYPE mars_push_up gauge\nmars_push_up 0\n",
+        'mars_info{instance="a"} 1\nmars_info{instance="b"} 2\n',
+        'mars_info{job="a"} 1\nmars_info{job="b"} 2\n',
+    ],
+)
+def test_conflicting_push_does_not_replace_last_good_reading(keys, body):
+    board = Board()
+    key, _ = keys.create("api", "api")
+    board.push(key, "node", AGENT, "text/plain")
+    before = scrape(board)
+    with pytest.raises(ValueError, match="reserved|duplicate"):
+        board.push(key, "node", body, "text/plain")
+    assert scrape(board) == before
+
+
+def test_in_flight_push_cannot_restore_revoked_key(keys):
+    board = Board()
+    key, token = keys.create("api", "api")
+    authenticated = keys.check(token)
+    keys.revoke(key.id)
+    board.revoke(key.id)
+    with pytest.raises(PermissionError, match="revoked"):
+        board.push(authenticated, "new-node", AGENT, "text/plain")
+    assert board.clients(key.id) == []
+
+
+def test_http_push_revoked_while_its_body_is_parsed(server, keys, monkeypatch):
+    from mars_gateway import board as board_module
+
+    key, token = keys.create("api", "api")
+    entered, release = threading.Event(), threading.Event()
+    original = board_module.parse
+
+    def delayed(body, content_type):
+        entered.set()
+        assert release.wait(5)
+        return original(body, content_type)
+
+    monkeypatch.setattr(board_module, "parse", delayed)
+    result = []
+    request = threading.Thread(
+        target=lambda: result.append(
+            call("POST", f"{server}/push/node", AGENT, {"Authorization": f"Bearer {token}"})
+        )
+    )
+    request.start()
+    try:
+        assert entered.wait(5)
+        assert call("DELETE", f"{server}/api/keys/{key.id}")[0] == 204
+    finally:
+        release.set()
+        request.join(5)
+    assert not request.is_alive()
+    assert result[0][0] == 401
+    assert "node" not in call("GET", f"{server}/metrics")[1]

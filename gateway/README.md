@@ -13,7 +13,10 @@ display's own address.
   sent, and `instance` from the push URL.
 - A client `POST`s its metrics once a second to `http://<mars>:8080/push/<instance>` with
   `Authorization: Bearer <key>`, in the Prometheus text format or OpenMetrics. Only `mars_*`
-  families are kept.
+  families are kept. `mars_push_*` is reserved for the gateway, and samples that collide after
+  station/instance relabeling are rejected.
+- Each `(station, instance)` has one current owner: its latest accepted push. Rotating a key
+  replaces that node's old entry, and revoking the old key does not take the new owner offline.
 - Prometheus scrapes `mars-gateway:9111/metrics` once a second (job `mars-push`). A client that
   hasn't pushed for 5 s is left out, so its series go stale and its lamp goes dark;
   `mars_push_up{station, instance}` reads 0 for it for an hour.

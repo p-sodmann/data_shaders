@@ -14,7 +14,7 @@ One git repository:
 
 | Path | Contents | Tooling |
 |---|---|---|
-| `web/` | MARS display | Node 22, npm, Vite |
+| `web/` | MARS display | Node 26.13.0, npm, Vite |
 | `probe/` | `mars-probe` Python package, import name `mars_probe` | uv, hatchling, ruff, pytest, Python ≥ 3.11 |
 | `examples/demo/` | demo FastAPI service and load generator | uv, and depends on `../../probe` as a path dependency |
 | `deploy/` | `compose.yaml`, Prometheus config, Caddyfile | Docker Compose v2 |

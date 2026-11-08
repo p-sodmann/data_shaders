@@ -11,9 +11,10 @@ services:
     # Without `pull`, or before this version is published, `up` builds it from this checkout.
     image: ghcr.io/p-sodmann/mars-agent:0.1.0
     build: .
-    # The host's network namespace, so /proc/net/dev counts the host's own interfaces and the
-    # host name is the host's (the node's name on the display). There is no `ports:` with it.
+    # Host networking counts the host interfaces; UTS supplies its stable node name.
+    # There is no `ports:` with host networking.
     network_mode: host
+    uts: host
     environment:
       # Push mode (ADR-0010): the agent connects out, nothing connects in.
       MARS_PUSH_URL: ${MARS_PUSH_URL:-}

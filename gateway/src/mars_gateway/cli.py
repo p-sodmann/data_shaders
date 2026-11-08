@@ -126,6 +126,8 @@ def handler(keys: KeyStore, board: Board) -> type[BaseHTTPRequestHandler]:
             try:
                 text = body.decode()
                 board.push(key, instance, text, self.headers.get("Content-Type", ""))
+            except PermissionError:
+                return self._error(401, "revoked key")
             except (UnicodeDecodeError, ValueError) as e:
                 return self._error(400, str(e))
             self._send(204)

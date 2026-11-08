@@ -1,3 +1,5 @@
+import { STALE_AFTER } from './telemetry.js';
+
 // Live adapter: polls a JSON endpoint once per interval.
 // Expected payload (all fields numeric unless noted):
 // {
@@ -63,7 +65,9 @@ function normalize(j, n, profile) {
 }
 
 export function createPollingSource({ profile, url, hostCount = 32, interval = 1000 }) {
-  let timer = null;
+  let timer = null, watchdog = null, controller = null;
+  let generation = 0;
+  let lastSuccess = -Infinity;
   return {
     kind: 'LIVE',
     hostCount,
@@ -72,20 +76,41 @@ export function createPollingSource({ profile, url, hostCount = 32, interval = 1
     setSpeed() {},
     backfill: () => Promise.resolve([]), // the feed has no history
     triggerIncident() {},
-    start(push) {
+    start(push, store) {
+      this.stop();
+      const token = generation;
+      lastSuccess = -Infinity;
+      const freshness = () => store?.setStale(Date.now() - lastSuccess > STALE_AFTER * 1000);
+      freshness();
+      watchdog = setInterval(freshness, 1000);
       const poll = async () => {
+        if (token !== generation) return;
+        const ctrl = controller = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 8000);
         try {
-          const r = await fetch(url, { cache: 'no-store' });
-          push(normalize(await r.json(), hostCount, profile));
+          const r = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const sample = normalize(await r.json(), hostCount, profile);
+          if (token !== generation || ctrl.signal.aborted) return;
+          push(sample);
+          lastSuccess = Date.now();
+          freshness();
         } catch (e) {
-          console.warn('[MARS] poll failed', e);
+          if (token === generation) console.warn('[MARS] poll failed', e);
+        } finally {
+          clearTimeout(timeout);
+          if (controller === ctrl) controller = null;
+          if (token === generation) timer = setTimeout(poll, interval);
         }
       };
       poll();
-      timer = setInterval(poll, interval);
     },
     stop() {
-      clearInterval(timer);
+      generation++;
+      clearTimeout(timer);
+      clearInterval(watchdog);
+      controller?.abort();
+      controller = null;
     },
   };
 }

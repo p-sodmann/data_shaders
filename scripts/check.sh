@@ -2,7 +2,7 @@
 # Runs every check in the repo, the same as CI (.github/workflows/check.yml):
 #   release version, probe tests + lint, promtool rule tests, agent, gateway and demo tests + lint,
 #   web vitest, web build, headless smoke, shell syntax, compose file validation.
-# Works on a fresh clone. Needs uv, Node 22 + npm, and for the rule tests and compose files
+# Works on a fresh clone. Needs uv, Node 26.13.0 + npm (see .nvmrc), and for the rule tests and compose files
 # promtool or Docker/Podman (with docker compose, podman compose or podman-compose).
 #   scripts/check.sh            # everything
 #   SKIP_SMOKE=1 scripts/check.sh

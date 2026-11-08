@@ -5,6 +5,7 @@ artwork, in a cassette-futurist housing: a Braun-style device whose screens are
 all CRT phosphor shaders.
 
 ```bash
+nvm install      # uses the repository root .nvmrc (Node 26.13.0)
 npm install
 npm run dev      # then open the printed URL, press F for fullscreen
 npm test         # unit tests (vitest): config schema, migrations, load order, station manager
@@ -353,7 +354,10 @@ system, and every instrument factory takes it: `createX(station, options = {})`,
 `station.store`, `station.signal`, `station.almanac` and `station.profile`. Instruments with
 registry scope `either` or `device` get the device instead, `{ stations }`, a live read-only list.
 The page 4 analyser (`station.signal`) exists only while a mounted panel that `needs: ['signal']`
-holds it. Each station keeps its almanac in IndexedDB under `station:<id>:<source kind>`.
+holds it. Each station keeps its almanac in IndexedDB under a versioned key containing its id,
+source kind, and source identity (backend URL and station label for Prometheus, endpoint URL
+for polling, seed and host count for simulation). Rebinding a station therefore starts a
+separate history. Old keys remain stored but are no longer loaded because they lack that identity.
 
 Instruments come in two kinds:
 

@@ -35,8 +35,8 @@ key's station. Nothing connects to the host: it needs no open port, only a way o
 display's port 8080. With `MARS_BASIC_AUTH` on the display, pushes still go through (the key is
 their password).
 
-The compose file uses the host's network (so the packet count and the host name are the
-host's) and mounts `/` read-only at `/host` for the disk use. It runs as `nobody` and needs no
+The compose file uses the host's network for packet counts and its UTS namespace for a
+stable host name across container recreations. It mounts `/` read-only at `/host` for disk use. It runs as `nobody` and needs no
 capabilities. Without Docker:
 
 ```bash

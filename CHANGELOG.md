@@ -41,6 +41,8 @@ if the prod compose tag or this file don't follow it. The format follows
 
 ### Changed
 
+- Node.js 26.13.0 for the web Docker build, CI checks, and local development (`.nvmrc`).
+
 - The demo stack pushes: the demo clients send through Caddy with keys from `MARS_PUSH_KEYS`,
   and `deploy/prometheus/targets/demo.yml` is gone. Pushed nodes are named by host
   (`demo-api`), not `host:port`.
@@ -48,6 +50,18 @@ if the prod compose tag or this file don't follow it. The format follows
 - The Fleet strands and Slices instruments scale with the station's `thresh.max` (they had
   45 ms and 40 ms built in; the default `max` of 60 gives the same values).
 - The latency readout shows two decimals below 1 ms.
+
+### Fixed
+
+- Gateway key rotation keeps one series per station/node; reserved push metrics and duplicate
+  samples are rejected, and in-flight pushes cannot restore revoked clients.
+- Polling feeds time out, show stale data after an outage, and ignore responses after stopping.
+- Almanac caches distinguish source kinds, endpoints, and Prometheus station labels. Old caches
+  remain stored but are no longer loaded because their source identity is ambiguous; Prometheus
+  history is fetched again, simulated history is regenerated, and polling history starts fresh.
+- Error budgets and coverage use the configured SLO window instead of always using 30 days.
+- Host-agent containers share the host UTS namespace to keep a stable node name across recreations.
+- Probe route labels retain each mount prefix when a sub-app is mounted more than once.
 
 ## [0.1.0] - 2026-11-07
 

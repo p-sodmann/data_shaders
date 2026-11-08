@@ -16,21 +16,38 @@ from __future__ import annotations
 
 import re
 
-from starlette.routing import Host, Mount
+from starlette.routing import Host, Mount, compile_path
 
 UNMATCHED = "<unmatched>"
+
+
+def _template_pattern(template: str) -> re.Pattern:
+    # A mount and its child may reuse a parameter name. Their individual regexes are valid,
+    # but joining them would repeat a named capture group; only the converters matter here.
+    position = 0
+
+    def unique(match):
+        nonlocal position
+        position += 1
+        return "{p" + str(position) + (match[1] or "") + "}"
+
+    path = re.sub(r"\{[a-zA-Z_][a-zA-Z0-9_]*(:[a-zA-Z_][a-zA-Z0-9_]*)?\}", unique, template)
+    return compile_path(path)[0]
 
 
 class _Tree:
     def __init__(self, app):
         # Both keyed by id(): Starlette routes define __eq__ and so aren't hashable. The object
         # itself is kept alongside to rule out id reuse.
-        self.by_route: dict[int, tuple[object, str]] = {}
+        self.by_route: dict[int, list[tuple[object, object, str]]] = {}
+        self.patterns: dict[str, re.Pattern] = {}
         self.by_endpoint: dict[int, list[tuple[object, object, str]]] = {}
         self._walk(getattr(app, "routes", ()), "")
 
     def _add(self, route, endpoint, template: str) -> None:
-        self.by_route[id(route)] = (route, template)
+        self.by_route.setdefault(id(route), []).append((endpoint, route, template))
+        if template != UNMATCHED and template not in self.patterns:
+            self.patterns[template] = _template_pattern(template)
         if endpoint is not None:
             self.by_endpoint.setdefault(id(endpoint), []).append((endpoint, route, template))
 
@@ -60,11 +77,11 @@ class RouteTemplates:
     def __init__(self):
         self._tree: _Tree | None = None
 
-    def resolve(self, app, scope) -> str:
-        found = self._lookup(scope)
+    def resolve(self, app, scope, path: str | None = None) -> str:
+        found = self._lookup(scope, path)
         if found is None:
             self._tree = _Tree(app)
-            found = self._lookup(scope)
+            found = self._lookup(scope, path)
         if found is None:
             # Not reachable from the top-level app (a router built per request?). The route's
             # own template is still better than the raw path.
@@ -72,7 +89,7 @@ class RouteTemplates:
             return getattr(route, "path", None) or UNMATCHED
         return found
 
-    def _lookup(self, scope) -> str | None:
+    def _lookup(self, scope, path: str | None = None) -> str | None:
         route = scope.get("route")
         endpoint = scope.get("endpoint")
         if route is None and endpoint is None:
@@ -81,16 +98,22 @@ class RouteTemplates:
         if tree is None:
             return None
         if route is not None:
-            hit = tree.by_route.get(id(route))
-            return hit[1] if hit is not None and hit[0] is route else None
-
-        candidates = [c for c in tree.by_endpoint.get(id(endpoint), ()) if c[0] is endpoint]
+            candidates = [c for c in tree.by_route.get(id(route), ()) if c[1] is route]
+        else:
+            candidates = [c for c in tree.by_endpoint.get(id(endpoint), ()) if c[0] is endpoint]
         if len(candidates) == 1:
             return candidates[0][2]
-        # One endpoint behind several routes: the one whose pattern matches the remaining path.
-        path = _inner_path(scope)
+        # The same route object can appear below several mounts. Match its full template
+        # against the path captured before mounts rewrote the request scope.
+        request_path = path if path is not None else scope["path"]
+        for _, _, template in candidates:
+            regex = tree.patterns.get(template)
+            if regex is not None and regex.match(request_path):
+                return template
+        # Older Starlette exposes only the endpoint and may supply an inner path.
+        inner = _inner_path(scope)
         for _, r, template in candidates:
-            regex: re.Pattern | None = getattr(r, "path_regex", None)
-            if regex is not None and regex.match(path):
+            regex = getattr(r, "path_regex", None)
+            if regex is not None and regex.match(inner):
                 return template
         return None

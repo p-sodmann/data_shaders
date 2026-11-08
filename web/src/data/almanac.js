@@ -25,6 +25,7 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
   const { slo, burnAlerts } = profile;
   let thresh = profile.thresh; // retune() swaps it for minutes filled from now on
   const BUDGET = 1 - slo.target;
+  const budgetMinutes = slo.days * 1440;
   const m = new Int32Array(N).fill(-1);
   const lat = new Float32Array(N), err = new Float32Array(N), tp = new Float32Array(N), sat = new Float32Array(N);
   const st = new Uint8Array(N);
@@ -156,21 +157,24 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
   // ---------- derived views ----------
   let cache = { v: -1 };
 
-  // budget, burn rates and incidents for the 30 days ending at lastMin
+  // Keep 30 days of incidents; calculate the budget over the configured SLO window.
   function analyse() {
     if (cache.v === version) return cache;
     const end = lastMin;
     const from = end - N + 1;
+    const budgetFrom = end - budgetMinutes + 1;
     let total = 0, bad = 0, minutes = 0;
     const incidents = [];
     let cur = null;
     for (let mi = from; mi <= end; mi++) {
       const i = slotOf(mi);
       if (m[i] !== mi) continue;
-      minutes++;
       const req = tp[i] * 60, b = err[i] * req;
-      total += req;
-      bad += b;
+      if (mi >= budgetFrom) {
+        minutes++;
+        total += req;
+        bad += b;
+      }
       if (st[i] === 2) {
         if (cur && mi - cur.end <= 3) cur.end = mi;
         else {
@@ -233,7 +237,7 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
     cache = {
       v: version,
       end,
-      coverage: minutes / N,
+      coverage: minutes / budgetMinutes,
       total,
       bad,
       consumed,

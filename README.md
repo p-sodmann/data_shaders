@@ -154,7 +154,7 @@ scripts/check.sh
 
 runs every check, the same as CI: probe tests and lint, the promtool rule tests, agent, gateway and demo tests,
 web unit tests and build, the headless smoke test, and the compose files. It needs `uv`,
-Node 22, and Docker or Podman (or a local `promtool`). Releases: [CHANGELOG.md](CHANGELOG.md);
+Node 26.13.0 (see `.nvmrc`), and Docker or Podman (or a local `promtool`). Releases: [CHANGELOG.md](CHANGELOG.md);
 a `v*` tag builds the multi-arch images and the probe wheel.
 
 - [docs/README.md](docs/README.md): the step table and the rules for implementing a step

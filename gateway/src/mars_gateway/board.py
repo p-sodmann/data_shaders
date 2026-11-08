@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from prometheus_client.metrics_core import Metric
 from prometheus_client.openmetrics.parser import text_string_to_metric_families as parse_om
@@ -33,6 +33,7 @@ FORGET = 3600.0
 @dataclass
 class Entry:
     station: str
+    key_id: str
     families: list[Metric]
     at: float  # time.monotonic() of the last push
     wall: float  # time.time() of the last push, for the keys plate
@@ -51,11 +52,24 @@ def parse(body: str, content_type: str) -> list[Metric]:
 
 def relabel(families: list[Metric], station: str, instance: str) -> list[Metric]:
     out, n = [], 0
+    seen = set()
+    names = set()
     for f in families:
+        if f.name.startswith("mars_push_"):
+            raise ValueError("mars_push_* metrics are reserved for the gateway")
+        if f.name in names:
+            raise ValueError(f"duplicate metric family: {f.name}")
+        names.add(f.name)
         m = Metric(f.name, f.documentation, f.type, f.unit)
         for s in f.samples:
             labels = {k: v for k, v in s.labels.items() if k != "job"}
             labels["station"], labels["instance"] = station, instance
+            if s.name.startswith("mars_push_"):
+                raise ValueError("mars_push_* metrics are reserved for the gateway")
+            identity = (s.name, tuple(sorted(labels.items())))
+            if identity in seen:
+                raise ValueError(f"duplicate sample after relabeling: {s.name}")
+            seen.add(identity)
             m.samples.append(s._replace(labels=labels, timestamp=None))
         n += len(m.samples)
         out.append(m)
@@ -69,22 +83,27 @@ class Board:
         self.ttl = ttl
         self.clock = clock
         self._lock = threading.Lock()
-        self._entries: dict[tuple[str, str], Entry] = {}  # (key id, instance) → entry
+        self._entries: dict[tuple[str, str], Entry] = {}  # (station, instance) → entry
+        self._revoked: set[str] = set()
 
     def push(self, key: Key, instance: str, body: str, content_type: str) -> int:
         """Replaces what `instance` pushed with `key`; returns the number of samples kept."""
         families = relabel(parse(body, content_type), key.station, instance)
-        entry = Entry(key.station, families, self.clock(), time.time())
+        entry = Entry(key.station, key.id, families, self.clock(), time.time())
         with self._lock:
-            self._entries[(key.id, instance)] = entry
+            if key.id in self._revoked:
+                raise PermissionError("revoked key")
+            # The latest accepted push owns this station/node, including after key rotation.
+            self._entries[(key.station, instance)] = entry
         return sum(len(f.samples) for f in families)
 
     def revoke(self, key_id: str) -> None:
         """A revoked key's clients read as down at once, not after `ttl`."""
         with self._lock:
-            for (kid, _), e in self._entries.items():
-                if kid == key_id:
-                    e.revoked, e.families = True, []
+            self._revoked.add(key_id)
+            for identity, e in self._entries.items():
+                if e.key_id == key_id:
+                    self._entries[identity] = replace(e, revoked=True, families=[])
 
     def clients(self, key_id: str) -> list[dict]:
         """The instances that pushed with a key in the last hour, for the keys plate."""
@@ -93,8 +112,8 @@ class Board:
             return sorted(
                 (
                     {"instance": inst, "lastPush": e.wall, "live": self._fresh(e, now)}
-                    for (kid, inst), e in self._entries.items()
-                    if kid == key_id
+                    for (_, inst), e in self._entries.items()
+                    if e.key_id == key_id
                 ),
                 key=lambda c: c["instance"],
             )

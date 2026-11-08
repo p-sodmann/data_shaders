@@ -160,3 +160,48 @@ def test_shared_endpoint_and_scope_without_route():
     # The router mount itself as endpoint: the request entered /m but matched nothing inside.
     assert rt.resolve(app, {"endpoint": sub, "path": "/m/zzz", "root_path": "/m"}) == "<unmatched>"
     assert rt.resolve(app, {"path": "/zzz"}) == "<unmatched>"
+
+
+def test_shared_subapp_keeps_each_mount_template():
+    from fastapi import FastAPI
+
+    from mars_probe import instrument
+
+    child = FastAPI()
+
+    @child.get("/items/{item_id}")
+    def item(item_id: int):
+        return {"id": item_id}
+
+    app = FastAPI()
+    app.mount("/one", child)
+    app.mount("/two", child)
+    probe = instrument(app, "api")
+    with TestClient(app, root_path="/proxy") as c:
+        c.get("/proxy/one/items/1")
+        c.get("/proxy/two/items/2")
+        c.get("/proxy/one/items/3")
+    assert count(probe, "/one/items/{item_id}", "2xx") == 2
+    assert count(probe, "/two/items/{item_id}", "2xx") == 1
+
+
+def test_shared_subapp_with_parameterized_mounts_and_reused_parameter_names():
+    from fastapi import FastAPI
+
+    from mars_probe import instrument
+
+    child = FastAPI()
+
+    @child.get("/items/{id}")
+    def item(id: int):
+        return {"id": id}
+
+    app = FastAPI()
+    app.mount("/one/{id}", child)
+    app.mount("/two/{id}", child)
+    probe = instrument(app, "api")
+    with TestClient(app) as c:
+        c.get("/one/123/items/1")
+        c.get("/two/456/items/2")
+    assert count(probe, "/one/{id}/items/{id}", "2xx") == 1
+    assert count(probe, "/two/{id}/items/{id}", "2xx") == 1

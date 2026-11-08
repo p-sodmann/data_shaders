@@ -35,7 +35,7 @@ the loadgen and the MARS web container. The `mars:*` recording rules are live an
    `evaluation_interval: 1s`, and a job `mars` with `file_sd_configs` on
    `/etc/prometheus/targets/*.yml` and `honor_labels: true`. Rule files are mounted from the
    probe path. `deploy/prometheus/targets/demo.yml` lists the demo targets.
-5. **`web/Dockerfile`:** a `node:22-alpine` build stage (`npm ci && npm run build`), then
+5. **`web/Dockerfile`:** a `node:26.13.0-alpine` build stage (`npm ci && npm run build`), then
    `caddy:2-alpine`. **`web/Caddyfile`:** serve `/srv`, `handle_path /prom/*` →
    `reverse_proxy {$PROMETHEUS_URL:prometheus:9090}`, and serve `/config/*` from
    `/config` (a volume, may be empty). SPA fallback to `index.html`. Long cache for
@@ -130,7 +130,7 @@ run.
 - **`<unmatched>` is kept as a route** in the endpoint rules.
 - **Image pins:** `prom/prometheus:v3.16.0` (latest at the time). It is written in two places,
   `deploy/compose.yaml` and `probe/scripts/test-rules.sh`; both carry a comment. Caddy is
-  `caddy:2-alpine` and Node `node:22-alpine` as the step says (not patch-pinned).
+  `caddy:2-alpine` and Node `node:26.13.0-alpine` pinned to the same release used by CI and `.nvmrc`.
 - **Extras in scope of the files the step creates:** `scrape_timeout: 1s` (must not exceed the
   interval), `refresh_interval: 10s` on file_sd (fsnotify doesn't always fire on bind mounts),
   Prometheus published on `127.0.0.1:9090` only, `restart: unless-stopped`, Caddy `admin off` and

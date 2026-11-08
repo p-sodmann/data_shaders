@@ -41,6 +41,15 @@ const RETRY_MS = [2000, 5000, 10000, 30000];
 
 const archiveStartOf = (now) => Math.floor(now / ROW_SECONDS) * ROW_SECONDS - (ROWS - 1) * ROW_SECONDS;
 
+// Source identity is part of the cache key: a document id can be rebound to another system.
+export function stationHistoryKey(def, prometheus = '/prom') {
+  const src = def.source ?? { kind: 'sim' };
+  const identity = src.kind === 'prometheus'
+    ? [prometheus.replace(/\/+$/, ''), src.station]
+    : src.kind === 'poll' ? src.url : [src.seed ?? null, src.hosts ?? 32];
+  return `station:v2:${JSON.stringify([def.id, src.kind, identity])}`;
+}
+
 export function createStation(def, ctx = {}) {
   const { source: src = { kind: 'sim' }, endpoints: epOverride, stages: stOverride, ...rest } = def;
   let overrides = rest; // retune() replaces its thresholds
@@ -116,15 +125,9 @@ export function createStation(def, ctx = {}) {
 
   build(null);
 
-  // The long memory for page 5, one IndexedDB record per station id and source
-  // kind (so a simulated past never shows up as a real one). Before stations had
-  // ids the record was keyed by source and name; that one is copied over once.
-  // It outlives rebuilds: it only needs the thresholds and the SLO.
-  const almanac = createAlmanac({
-    profile,
-    key: `station:${profile.id}:${source.kind}`,
-    legacyKey: prom ? null : `${source.kind}:${src.kind === 'sim' ? 'sim' : src.url}:${profile.name}`,
-  });
+  // Cache only this system's history. Ambiguous old keys are deliberately left behind;
+  // Prometheus restores its history and simulated stations synthesize theirs again.
+  const almanac = createAlmanac({ profile, key: stationHistoryKey(def, ctx.prometheus ?? '/prom') });
 
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

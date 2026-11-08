@@ -131,7 +131,7 @@ async function twoStationExtras(page) {
       q.onsuccess = () => res(q.result);
     });
   });
-  for (const k of ['station:main:SIMULATED', 'station:search:SIMULATED']) {
+  for (const k of ['station:v2:["main","sim",[1,32]]', 'station:v2:["search","sim",[2,24]]']) {
     if (!keys.includes(k)) errors.push(`almanac record "${k}" missing (have ${keys.join(', ')})`);
   }
   return errors;

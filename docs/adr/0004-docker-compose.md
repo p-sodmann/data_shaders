@@ -8,7 +8,7 @@ Status: accepted · 2026-11-05
 
 | Service | Image | Port | Notes |
 |---|---|---|---|
-| `mars` | built from `web/Dockerfile`: a `node:22-alpine` build stage, then `caddy:2-alpine` | 8080 | Serves `dist/`, proxies `/prom/*` to Prometheus, serves `/config/mars.json` from a mounted volume |
+| `mars` | built from `web/Dockerfile`: a `node:26.13.0-alpine` build stage, then `caddy:2-alpine` | 8080 | Serves `dist/`, proxies `/prom/*` to Prometheus, serves `/config/mars.json` from a mounted volume |
 | `prometheus` | `prom/prometheus` (pinned) | 9090 (optional) | 1 s scrape and rule interval, exemplar storage, 35 d retention, named data volume |
 | `demo-api`, `demo-search` | built from `examples/demo/Dockerfile` | – | compose profile `demo` |
 | `loadgen` | same image, different command | – | compose profile `demo` |

@@ -66,7 +66,7 @@ class MarsMiddleware:
             elapsed = perf_counter() - start
             probe.in_flight.dec()
             # The routers have written into scope by now (it's the same dict all the way down).
-            route = self.routes.resolve(root_app, scope)
+            route = self.routes.resolve(root_app, scope, path)
             method = scope["method"].upper()
             region, rtt = probe.resolve_region(scope)
             probe.observe_request(route, method, cls, region, elapsed, status or 500)
