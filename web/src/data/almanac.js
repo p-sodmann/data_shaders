@@ -76,13 +76,14 @@ export function createAlmanac({ profile, key, legacyKey = null }) {
   // saturation }] (a backend's history); minutes this device already holds
   // stay as they are. The state of a minute comes from the thresholds, since
   // the record has no hysteresis behind it. Returns how many were written.
-  function fill(records) {
+  function fill(records, { overwrite = false } = {}) {
     let n = 0;
     for (const x of records) {
       const mi = x.mi;
-      if (m[slotOf(mi)] === mi) continue;
+      if (!overwrite && m[slotOf(mi)] === mi) continue;
       const s = x.latency > thresh.crit || x.errorRate > thresh.errCrit ? 2 : x.latency > thresh.warn || x.errorRate > thresh.errWarn ? 1 : 0;
       write(mi, { lat: x.latency, err: x.errorRate, tp: x.throughput, sat: x.saturation, st: s });
+      if (overwrite && acc?.min === mi) acc = null;
       n++;
     }
     if (n) version++;

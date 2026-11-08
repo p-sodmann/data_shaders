@@ -94,3 +94,18 @@ describe('rhythm search', () => {
     expect(peaks).toEqual([]);
   });
 });
+
+it('rebuilds cached historical analysis when missed samples are restored', () => {
+  let missing = true;
+  const store = fakeStore((k, t) => missing ? NaN : k === 0 ? 12 + 4 * Math.sin(t / 30) : k === 2 ? 100 : 0.2);
+  const signal = createSignal(store, profile);
+  signal.update(0);
+  expect(signal.curve.cloud).toHaveLength(0);
+  expect(signal.fall.rows.some((v) => v > 0)).toBe(false);
+  missing = false;
+  store.historyVersion = 1;
+  // Same live timestamp: a normal streaming update would leave these caches alone.
+  signal.update(1);
+  expect(signal.curve.cloud.length).toBeGreaterThan(0);
+  expect(signal.fall.rows.some((v) => v > 0)).toBe(true);
+});

@@ -415,6 +415,81 @@ describe('prometheus station', () => {
     expect(store().trackPoints().length).toBeGreaterThan(0);
   });
 
+  it('recovers a sleeping tab across row boundaries while retaining real gaps and current readouts', async () => {
+    await boot();
+    await vi.advanceTimersByTimeAsync(1100);
+    const before = store().latest.t;
+    vi.setSystemTime(Date.now() + 12 * 60 * 1000);
+    const resumeAt = Math.floor(Date.now() / 1000);
+    expect(store().latencyAt(before + 50)).toBe(-1);
+    await vi.advanceTimersByTimeAsync(1200);
+    const historical = before + 50;
+    expect(store().latencyAt(historical)).toBe(15 + historical % 7);
+    const missing = Math.ceil((before + 1) / 100) * 100;
+    expect(store().latencyAt(missing)).toBe(-1);
+    expect(store().latest.t).toBeGreaterThanOrEqual(resumeAt);
+    expect(store().latest.latency).toBeCloseTo(18.02, 2);
+    expect(store().historyVersion).toBe(1);
+    expect(store().recovery.count).toBeGreaterThan(700);
+    expect(store().state).toBe('NOMINAL');
+    // The newest ten minutes of node history are restored too.
+    expect(store().hostLatAt(resumeAt - 20, 0)).toBe(16);
+    const minute = Math.floor((before + 120) / 60);
+    expect(station.almanac.at(minute)).not.toBeNull();
+  });
+
+  it('retries a failed recovery while continuing to accept live samples', async () => {
+    await boot();
+    await vi.advanceTimersByTimeAsync(1100);
+    const before = store().latest.t;
+    const original = prom.fetch.getMockImplementation();
+    let failRanges = true;
+    prom.fetch.mockImplementation((url) => {
+      if (failRanges && params(url).path === 'query_range') throw new Error('range offline');
+      return original(url);
+    });
+    vi.setSystemTime(Date.now() + 120000);
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(store().latest.t).toBeGreaterThan(before + 100);
+    expect(store().latencyAt(before + 20)).toBe(-1);
+    failRanges = false;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(store().latencyAt(before + 20)).toBe(15 + (before + 20) % 7);
+    expect(store().stale).toBe(false);
+  });
+
+  it('discards a delayed recovery when the station is stopped', async () => {
+    await boot();
+    await vi.advanceTimersByTimeAsync(1100);
+    const oldStore = store(), before = oldStore.latest.t;
+    const original = prom.fetch.getMockImplementation(), releases = [];
+    prom.fetch.mockImplementation((url) => params(url).path === 'query_range'
+      ? new Promise((resolve) => releases.push(() => resolve(original(url)))) : original(url));
+    vi.setSystemTime(Date.now() + 120000);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(releases).toHaveLength(2);
+    station.stop();
+    releases.forEach((release) => release());
+    await vi.advanceTimersByTimeAsync(100);
+    expect(oldStore.latencyAt(before + 20)).toBe(-1);
+    expect(oldStore.historyVersion).toBe(0);
+  });
+
+  it('caps archive recovery after a very long sleep at the visible four-hour window', async () => {
+    await boot();
+    await vi.advanceTimersByTimeAsync(1100);
+    prom.ranges.length = 0;
+    vi.setSystemTime(Date.now() + 40 * 86400000);
+    await vi.advanceTimersByTimeAsync(1500);
+    const sys = prom.ranges.filter(([, , step]) => step === 1);
+    expect(sys.length).toBeGreaterThan(0);
+    const now = Math.floor(store().now());
+    expect(Math.min(...sys.map(([from]) => from))).toBeGreaterThanOrEqual(Math.floor(now / 600) * 600 - 23 * 600);
+    expect(sys.every(([a, b]) => b - a < 3601)).toBe(true);
+    expect(store().latest.t).toBeGreaterThan(now - 2);
+    expect(store().historyVersion).toBe(1);
+  });
+
   const store = () => station.store;
 });
 

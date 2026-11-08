@@ -1,3 +1,4 @@
+import { recoveryFrame, revealed } from '../data/recovery.js';
 import { PH, sevOf } from '../gl/palette.js';
 import { CODE, stationCode } from './stations.js';
 
@@ -55,6 +56,7 @@ export function createStationStrands(device, options = {}) {
       stations.forEach((st) => {
         const { store } = st;
         const t = store.profile.thresh;
+        const recovery = recoveryFrame(store.recovery, f.now);
         const code = stationCode(st);
         const stale = code === CODE.STALE;
         const warnQ = t.warn / t.crit;
@@ -66,7 +68,8 @@ export function createStationStrands(device, options = {}) {
         const now = Math.floor(store.now());
         let prev = null, tip = null;
         for (let s = (SPAN - 1) % step; s < SPAN; s += step) {
-          const val = peak(store, now - (SPAN - 1) + s);
+          const at = now - (SPAN - 1) + s;
+          const val = revealed(at, recovery) ? peak(store, at) : -1;
           if (val < 0) {
             prev = null;
             continue;

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ROWS, ROW_SECONDS } from '../../config.js';
 import { hm } from '../../data/telemetry.js';
 import { rowGeom, tapeHeight, TAPE } from '../tape.js';
@@ -34,6 +34,7 @@ export function TapeOverlay({ station, snap, options }) {
   const cy = (TAPE.Y0 + tapeHeight(thresh.crit, thresh.max)) * 100;
   return (
     <>
+      <RecoveryNotice recovery={snap.recovery} />
       {rows}
       {axis}
       {options?.limits !== false && (
@@ -49,4 +50,19 @@ export function TapeOverlay({ station, snap, options }) {
       <span className="ov corner">P50 MS · −4 H ↑ · NOW ↓</span>
     </>
   );
+}
+
+function RecoveryNotice({ recovery }) {
+  const [active, setActive] = useState(null);
+  useEffect(() => {
+    const remaining = recovery ? recovery.at + Math.max(1200, recovery.duration) + 300 - performance.now() : 0;
+    if (remaining <= 0) { setActive(null); return; }
+    setActive(recovery);
+    const timer = setTimeout(() => setActive(null), remaining);
+    return () => clearTimeout(timer);
+  }, [recovery]);
+  if (!active) return null;
+  const span = active.to - active.from + 1;
+  const duration = span >= 60 ? `${Math.round(span / 60)} MIN` : `${span} SEC`;
+  return <span key={active.at} className="ov recovery-notice" role="status" style={{ '--recovery-ms': `${Math.max(1200, active.duration)}ms` }}>ARCHIVE SYNC · {duration} RESTORED</span>;
 }

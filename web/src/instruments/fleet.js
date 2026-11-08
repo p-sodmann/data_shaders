@@ -1,3 +1,4 @@
+import { recoveryFrame, revealed } from '../data/recovery.js';
 import { PH, sevOf } from '../gl/palette.js';
 
 // 09 FLEET: every node's latency over the last three minutes as one faint
@@ -23,6 +24,7 @@ export function createFleet(station, options = {}) {
       const L = 34, R = W * 0.78, T = 30, B = H - 24;
       const x = (s) => L + (s / (SPAN - 1)) * (R - L);
       const y = (ms) => B - Math.min(1.08, ms / MAX) * (B - T);
+      const recovery = recoveryFrame(store.recovery, f.now);
       const head = (f.now / 1000) % 1; // keep the right edge alive between samples
 
       // axis furniture
@@ -39,7 +41,8 @@ export function createFleet(station, options = {}) {
       for (let i = 0; i < n; i++) {
         let prev = null;
         for (let s = 0; s < SPAN; s++) {
-          const val = store.hostLatAt(now - (SPAN - 1) + s, i);
+          const at = now - (SPAN - 1) + s;
+          const val = revealed(at, recovery) ? store.hostLatAt(at, i) : -1;
           if (val < 0) {
             prev = null;
             continue;
@@ -57,7 +60,8 @@ export function createFleet(station, options = {}) {
       // cluster P50 strand
       let prev = null;
       for (let s = 0; s < SPAN; s++) {
-        const val = store.latencyAt(now - (SPAN - 1) + s);
+        const at = now - (SPAN - 1) + s;
+        const val = revealed(at, recovery) ? store.latencyAt(at) : -1;
         if (val < 0) {
           prev = null;
           continue;
@@ -67,6 +71,13 @@ export function createFleet(station, options = {}) {
         prev = p;
       }
       if (prev) v.dot(prev[0] + head * 0.5, prev[1], PH.ok, 1.4, 1.4);
+
+      if (recovery && recovery.cursor >= now - SPAN + 1 && recovery.cursor <= now) {
+        const xx = x(recovery.cursor - now + SPAN - 1);
+        v.line(xx, T, xx, B, PH.ok, 0.45 * recovery.glow, 0.65);
+      }
+
+      if (recovery) v.text(L, T + 8, `ARCHIVE SYNC ${Math.round(recovery.progress * 100)}%`, PH.ok, 0.65 * recovery.glow, 1.4);
 
       // distribution of current node latency
       cur.sort((a, b) => a - b);

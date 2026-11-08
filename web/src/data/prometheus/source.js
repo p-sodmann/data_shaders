@@ -1,4 +1,5 @@
-import { HIST } from '../../config.js';
+import { onResume } from '../resume.js';
+import { HIST, ROWS, ROW_SECONDS } from '../../config.js';
 import { STALE_AFTER } from '../telemetry.js';
 import { region } from '../regions.js';
 import { chunks, pool, sel } from './client.js';
@@ -70,6 +71,13 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
   let running = false;
   let busy = false;
   let lastT = -Infinity;
+  let lastPollT = -Infinity;
+  let missingFrom = null;
+  let recovering = false;
+  let retryAt = 0;
+  let generation = 0;
+  let offResume = null;
+  let recovered = null;
   let lastDataWall = -Infinity;
   let lastExemplarT = -Infinity;
   let pending = [];
@@ -179,8 +187,9 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
     };
   }
 
-  async function sampleRequests(t) {
+  async function sampleRequests(t, token) {
     const list = await client.exemplars(`${REQUEST_METRIC}${s}`, t - EXEMPLAR_EVERY, t);
+    if (!running || token !== generation) return;
     const out = [];
     for (const { seriesLabels: l, exemplars } of list) {
       for (const e of exemplars) {
@@ -196,8 +205,9 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
     if (pending.length > 60) pending = pending.slice(-60);
   }
 
-  async function checkAlerts() {
+  async function checkAlerts(token) {
     const alerts = await client.alerts();
+    if (!running || token !== generation) return;
     const firing = new Map();
     for (const a of alerts) {
       if (a.state !== 'firing' || a.labels?.station !== station) continue;
@@ -207,20 +217,22 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
     store.setExternal([...firing.values()]);
   }
 
-  async function poll(push) {
+  async function poll(push, token) {
     if (busy) return; // Prometheus is slow: never queue polls up behind each other
     busy = true;
     tick++;
     try {
       const side = [];
-      if (tick % EXEMPLAR_EVERY === 0) side.push(sampleRequests(Math.floor(now())).catch(() => {}));
-      if (tick % ALERTS_EVERY === 1) side.push(checkAlerts().catch(() => {}));
+      if (tick % EXEMPLAR_EVERY === 0) side.push(sampleRequests(Math.floor(now()), token).catch(() => {}));
+      if (tick % ALERTS_EVERY === 1) side.push(checkAlerts(token).catch(() => {}));
       const result = await client.query(`{__name__=~"mars:.+",station=${JSON.stringify(station)}}`);
       await Promise.all(side);
-      if (!running) return;
+      if (!running || token !== generation) return;
       // every sample of an instant query carries the evaluation time
       if (result.length) offset = +result[0].value[0] - Date.now() / 1000;
       const t = Math.floor(now());
+      if (Number.isFinite(lastPollT) && t > lastPollT + 1) missingFrom = Math.min(missingFrom ?? Infinity, lastPollT + 1);
+      lastPollT = t;
       const f = frame(result, t);
       if (f.data) lastDataWall = Date.now();
       if (f.sample && t > lastT) {
@@ -231,13 +243,15 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
       } else {
         store.pushHosts(f.hosts);
       }
+      // Keep live polling independent of range queries and the archive animation.
+      catchUp(t, token);
     } catch (e) {
       // a failed poll pushes nothing: the tape shows the gap
       if (Date.now() - lastDataWall < POLL_MS * 2) console.warn(`[MARS] station "${station}": ${e.message}`);
     } finally {
       busy = false;
     }
-    if (running) store.setStale(Date.now() - lastDataWall > STALE_AFTER * 1000);
+    if (running && token === generation) store.setStale(Date.now() - lastDataWall > STALE_AFTER * 1000);
   }
 
   // Several range queries ([query, from, to, step]), each cut into chunks, all
@@ -254,6 +268,81 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
     const out = list.map(() => []);
     res.forEach((r, i) => out[owner[i]].push(...r));
     return out;
+  }
+
+  async function readSamples(from, end, progressFn) {
+    if (end < from) return [];
+    const [sys, nodes] = await ranges(
+      [
+        [`{__name__=~"${STATION_SERIES}",station=${JSON.stringify(station)}}`, from, end, 1],
+        [`{__name__=~"${NODE_SERIES}",station=${JSON.stringify(station)}}`, Math.max(from, end - HIST + 1), end, 1],
+      ],
+      progressFn,
+    );
+
+    const n = end - from + 1;
+    const col = (series, name) => {
+      const out = new Float64Array(n).fill(NaN);
+      for (const r of series) {
+        if (r.metric.__name__ !== `mars:${name}`) continue;
+        for (const [t, v] of r.values) {
+          const i = Math.round(+t) - from;
+          if (i >= 0 && i < n) out[i] = +v;
+        }
+      }
+      return out;
+    };
+    const lat = col(sys, 'latency_p50_ms'), tp = col(sys, 'throughput_rps'), err = col(sys, 'error_ratio'), sat = col(sys, 'saturation_ratio');
+
+    // node values per second, by instance
+    const nodeAt = new Map();
+    for (const r of nodes) {
+      const inst = r.metric.instance;
+      slot('nodes', inst, () => store.addNode(inst));
+      for (const [t, v] of r.values) {
+        const ts = Math.round(+t);
+        if (!nodeAt.has(ts)) nodeAt.set(ts, []);
+        nodeAt.get(ts).push({ metric: { __name__: r.metric.__name__, instance: inst }, value: [t, v] });
+      }
+    }
+
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      if (!Number.isFinite(lat[i]) || !Number.isFinite(tp[i])) continue; // a gap stays a gap
+      const t = from + i;
+      const nd = nodeAt.get(t);
+      const h = nd ? hosts(group(nd), lat[i]) : { hostStates: null, hostLoads: null, hostLatency: null };
+      if (nd && store.hostCount && h.hostStates.every((state) => state === 3)) continue;
+      out.push({
+        t, latency: lat[i], throughput: tp[i], errorRate: err[i] === err[i] ? err[i] : 0, saturation: sat[i] === sat[i] ? sat[i] : 0,
+        ...h, stageLatency: null, requests: null, endpoints: null, regions: null,
+      });
+    }
+    return out;
+  }
+
+  async function catchUp(t, token) {
+    if (missingFrom === null || recovering || Date.now() < retryAt) return;
+    const missedFrom = missingFrom;
+    const from = Math.max(missedFrom, Math.floor(t / ROW_SECONDS) * ROW_SECONDS - (ROWS - 1) * ROW_SECONDS);
+    const to = t - 1;
+    if (from > to) return;
+    missingFrom = null;
+    recovering = true;
+    try {
+      const samples = await readSamples(from, to);
+      if (!running || token !== generation) return;
+      await recovered?.(samples, { from, to, missedFrom });
+      if (!running || token !== generation) return;
+      retryAt = 0;
+    } catch (e) {
+      if (!running || token !== generation) return;
+      missingFrom = Math.min(missingFrom ?? Infinity, missedFrom);
+      retryAt = Date.now() + 5000;
+      console.warn(`[MARS] station "${station}": archive recovery failed (${e.message}), retrying`);
+    } finally {
+      recovering = false;
+    }
   }
 
   return {
@@ -284,53 +373,9 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
     async backfill(fromT, progressFn, st) {
       bind(st);
       const end = Math.floor(now()) - 1;
-      const from = Math.floor(fromT);
-      const [sys, nodes] = await ranges(
-        [
-          [`{__name__=~"${STATION_SERIES}",station=${JSON.stringify(station)}}`, from, end, 1],
-          [`{__name__=~"${NODE_SERIES}",station=${JSON.stringify(station)}}`, Math.max(from, end - HIST + 1), end, 1],
-        ],
-        progressFn,
-      );
-
-      const n = end - from + 1;
-      const col = (series, name) => {
-        const out = new Float64Array(n).fill(NaN);
-        for (const r of series) {
-          if (r.metric.__name__ !== `mars:${name}`) continue;
-          for (const [t, v] of r.values) {
-            const i = Math.round(+t) - from;
-            if (i >= 0 && i < n) out[i] = +v;
-          }
-        }
-        return out;
-      };
-      const lat = col(sys, 'latency_p50_ms'), tp = col(sys, 'throughput_rps'), err = col(sys, 'error_ratio'), sat = col(sys, 'saturation_ratio');
-
-      // node values per second, by instance
-      const nodeAt = new Map();
-      for (const r of nodes) {
-        const inst = r.metric.instance;
-        slot('nodes', inst, () => store.addNode(inst));
-        for (const [t, v] of r.values) {
-          const ts = Math.round(+t);
-          if (!nodeAt.has(ts)) nodeAt.set(ts, []);
-          nodeAt.get(ts).push({ metric: { __name__: r.metric.__name__, instance: inst }, value: [t, v] });
-        }
-      }
-
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        if (!(lat[i] === lat[i]) || !(tp[i] === tp[i])) continue; // a gap stays a gap
-        const t = from + i;
-        const nd = nodeAt.get(t);
-        const h = nd ? hosts(group(nd), lat[i]) : { hostStates: null, hostLoads: null, hostLatency: null };
-        out.push({
-          t, latency: lat[i], throughput: tp[i], errorRate: err[i] === err[i] ? err[i] : 0, saturation: sat[i] === sat[i] ? sat[i] : 0,
-          ...h, stageLatency: null, requests: null, endpoints: null, regions: null,
-        });
-      }
+      const out = await readSamples(Math.floor(fromT), end, progressFn);
       lastT = out.length ? out.at(-1).t : end;
+      lastPollT = end;
       lastDataWall = out.length && out.at(-1).t >= end - STALE_AFTER ? Date.now() : -Infinity;
       return out;
     },
@@ -360,19 +405,28 @@ export function createPrometheusSource({ client, station, profile, onOverflow = 
       return out.sort((a, b) => a.mi - b.mi);
     },
 
-    start(push, st) {
+    start(push, st, onRecovered = (samples, span) => st.restore(samples, span)) {
       bind(st);
+      offResume?.();
       running = true;
+      const token = ++generation;
+      recovered = onRecovered;
       const loop = () => {
-        poll(push);
+        clearTimeout(timer);
+        if (!running || token !== generation) return;
+        poll(push, token);
         // just after each wall-clock second, when the rules have been evaluated
         timer = setTimeout(loop, POLL_MS - (Date.now() % POLL_MS) + 150);
       };
+      offResume = onResume(loop);
       loop();
     },
     stop() {
       running = false;
+      generation++;
       clearTimeout(timer);
+      offResume?.();
+      offResume = null;
     },
   };
 }

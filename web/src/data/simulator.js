@@ -1,3 +1,4 @@
+import { onResume } from './resume.js';
 import { ROWS, ROW_SECONDS } from '../config.js';
 import { distanceKm, solarHour } from './geo.js';
 
@@ -246,15 +247,23 @@ export function createSimulatedSource({ profile, hostCount = 32, speed = 1, seed
   let nextT = null;
   let timer = null;
   let push = null;
+  let store = null;
+  let offResume = null;
+  let lastTickWall = performance.now();
 
   const now = () => baseT + ((performance.now() - baseWall) / 1000) * sp;
 
   const tick = () => {
+    const wall = performance.now();
+    const resumed = wall - lastTickWall > 1500;
+    lastTickWall = wall;
     const n = now();
     if (nextT === null) nextT = Math.floor(n);
     // after a long sleep, skip ahead instead of replaying more than the archive holds
     if (n - nextT > ROWS * ROW_SECONDS) nextT = Math.floor(n) - ROWS * ROW_SECONDS;
+    const from = nextT;
     while (nextT <= n) push(sim.step(nextT++));
+    if (resumed) store?.markRecovery(from, nextT - 1, nextT - from);
   };
   const schedule = () => {
     clearInterval(timer);
@@ -282,13 +291,19 @@ export function createSimulatedSource({ profile, hostCount = 32, speed = 1, seed
       nextT = end;
       return Promise.resolve(out);
     },
-    start(fn) {
+    start(fn, st) {
       push = fn;
+      store = st;
+      offResume?.();
+      offResume = onResume(tick);
       tick();
       schedule();
     },
     stop() {
       clearInterval(timer);
+      offResume?.();
+      offResume = null;
+      push = null;
     },
     triggerIncident() {
       sim.triggerIncident(nextT ?? Math.floor(now()));

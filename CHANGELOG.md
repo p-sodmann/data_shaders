@@ -13,6 +13,10 @@ if the prod compose tag or this file don't follow it. The format follows
 
 ### Added
 
+- Automatic archive recovery after tab throttling, sleep, or a network interruption. Prometheus
+  fills missed tape, node, and signal samples and completed Almanac minutes while live readings
+  continue. A phosphor write head reveals restored traces; reduced motion skips the sweep.
+
 - **Push with keys** ([ADR-0010](docs/adr/0010-push-gateway.md)): `mars-gateway`
   ([gateway/](gateway/README.md), image `mars-gateway`) takes pushes at `/push/<instance>` with
   `Authorization: Bearer <key>`, gives every sample its key's station, and serves the latest

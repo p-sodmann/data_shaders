@@ -832,3 +832,22 @@ body.idle, body.idle * { cursor: none !important; }
 @media (max-height: 640px) {
   .ft { display: none; }
 }
+
+/* The recovered archive is rewritten by a phosphor beam, with a brief glass label. */
+.ov.recovery-notice {
+  top: 3%; right: 2%; padding: 6px 9px 8px;
+  color: rgba(174, 255, 212, .9); background: rgba(6, 23, 15, .8);
+  border: 1px solid rgba(150, 255, 195, .25);
+  letter-spacing: .12em; text-shadow: 0 0 8px rgba(150, 255, 195, .6);
+  animation: recovery-fade var(--recovery-ms) ease-out both;
+}
+.ov.recovery-notice::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: #baffd3; box-shadow: 0 0 7px #96ffc3; transform-origin: left;
+  animation: recovery-progress var(--recovery-ms) ease-out both;
+}
+@keyframes recovery-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes recovery-fade { 0% { opacity: 0; } 10%, 85% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ov.recovery-notice, .ov.recovery-notice::after { animation: none; }
+}

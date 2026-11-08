@@ -1,4 +1,5 @@
 import { ROWS, ROW_SECONDS, HIST, TRACK_STEP } from '../config.js';
+import { RECOVERY_MS } from './recovery.js';
 import { toVec, fromVec } from './geo.js';
 
 // The telemetry store: owns the tape archive (one Float32Array per 10-minute
@@ -71,6 +72,8 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
     rowStart: null,
     lastIdx: -1,
     rowsVersion: 0,
+    historyVersion: 0,
+    recovery: null,
     rolloverWall: -Infinity,
     latest: null,
     ema: null, // slow, for state decisions
@@ -134,6 +137,7 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
       latest: s.latest,
       kind: s.kind,
       speed: getSpeed(),
+      recovery: s.recovery,
     };
   }
 
@@ -400,6 +404,67 @@ export function createTelemetry({ profile, hostCount, now, kind, getSpeed, caps 
 
   return Object.assign(s, {
     push,
+    // Merge only missing historical slots. Never replay yesterday's state through today's
+    // alarm hysteresis, live readouts, endpoint tables, or event log.
+    restore(samples) {
+      if (!samples.length) return 0;
+      const previousRow = s.rowStart;
+      const end = Math.floor(now());
+      quiet = true;
+      roll(end);
+      quiet = false;
+      const oldest = s.rowStart - (ROWS - 1) * ROW_SECONDS;
+      let count = 0, from = Infinity, to = -Infinity;
+      for (const x of samples) {
+        if (!Number.isInteger(x.t) || x.t < oldest || x.t > end || !Number.isFinite(x.latency) || !Number.isFinite(x.throughput)) continue;
+        const slot = ((x.t % SERIES_N) + SERIES_N) % SERIES_N;
+        if (s.seriesT[slot] > x.t) continue;
+        if (s.seriesT[slot] !== x.t) {
+          const k = Math.floor((s.rowStart - Math.floor(x.t / ROW_SECONDS) * ROW_SECONDS) / ROW_SECONDS);
+          const i = x.t - (s.rowStart - k * ROW_SECONDS);
+          rows[k][i * 2] = x.latency;
+          rows[k][i * 2 + 1] = x.errorRate;
+          if (k === 0) s.lastIdx = Math.max(s.lastIdx, i);
+          s.seriesT[slot] = x.t;
+          s.series[0][slot] = x.latency;
+          s.series[1][slot] = x.errorRate;
+          s.series[2][slot] = x.throughput;
+          s.series[3][slot] = x.saturation;
+          for (let j = 0; j < s.services.length; j++) {
+            let load = 0, hosts = 0;
+            if (x.hostLoads) for (let h = 0; h < Math.min(s.hostCount, x.hostLoads.length); h++) {
+              if (serviceOf(h, s.hostCount) === j) { load += x.hostLoads[h]; hosts++; }
+            }
+            s.series[4 + j][slot] = hosts ? load / hosts : NaN;
+          }
+          count++;
+          from = Math.min(from, x.t);
+          to = Math.max(to, x.t);
+        }
+        const hs = ((x.t % HIST) + HIST) % HIST;
+        if (x.hostLatency && x.t > end - HIST && s.histT[hs] < x.t) {
+          s.histT[hs] = x.t;
+          s.hostHist.fill(-1, hs * hostCap, (hs + 1) * hostCap);
+          for (let h = 0; h < Math.min(s.hostCount, x.hostLatency.length); h++) s.hostHist[hs * hostCap + h] = x.hostLatency[h];
+        }
+      }
+      if (count || previousRow !== s.rowStart) {
+        s.rowsVersion++;
+        if (count) {
+          s.historyVersion++;
+          s.markRecovery(from, to, count);
+        }
+        s.refresh();
+      }
+      return count;
+    },
+    markRecovery(from, to, count) {
+      if (count < 3) return;
+      const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      s.recovery = { from, to, count, at: performance.now(), duration: reduced ? 0 : RECOVERY_MS };
+      log(now(), 0, `ARCHIVE SYNC ${count}S RESTORED`);
+      notify();
+    },
     // New thresholds (the stations plate, step 09): the next sample is judged
     // by them, and the tape and every table stay as they are.
     retune(next) {

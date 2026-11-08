@@ -193,10 +193,20 @@ export function createStation(def, ctx = {}) {
     }
     if (store.rowStart !== null) store.note(0, `ARCHIVE ${(ROWS * ROW_SECONDS) / 3600}H RESTORED`);
 
-    source.start((x) => {
-      store.push(x);
-      almanac.add(x, store.state);
-    }, store);
+    const liveSource = source, liveStore = store;
+    liveSource.start((x) => {
+      liveStore.push(x);
+      almanac.add(x, liveStore.state);
+    }, liveStore, async (samples, span) => {
+      if (token !== run) return;
+      liveStore.restore(samples);
+      const endMin = Math.floor((span.to + 1) / 60);
+      const fromMin = Math.max(Math.floor(span.missedFrom / 60), endMin - ALMANAC_DAYS * 1440 + 1);
+      if (endMin > fromMin) {
+        const records = await liveSource.history(fromMin, endMin);
+        if (token === run) almanac.fill(records, { overwrite: true });
+      }
+    });
     setStatus({ phase: 'live', progress: 1 });
 
     if (first) restoreAlmanac(token, archiveStart);

@@ -43,3 +43,16 @@ describe('station history identity', () => {
     expect(stationHistoryKey(poll)).not.toBe(stationHistoryKey({ ...poll, source: { ...poll.source, url: '/other' } }));
   });
 });
+
+it('replaces a partially observed minute with recovered history and does not recommit its old accumulator', () => {
+  const almanac = createAlmanac({ profile: createProfile(), key: 'test' });
+  try {
+    almanac.add({ t: 600, latency: 99, throughput: 100, errorRate: 0.5, saturation: 1 }, 'INCIDENT');
+    almanac.fill([record(10, 0.01)], { overwrite: true });
+    almanac.add({ t: 720, latency: 12, throughput: 100, errorRate: 0, saturation: 0 }, 'NOMINAL');
+    expect(almanac.at(10).lat).toBe(10);
+    expect(almanac.at(10).err).toBeCloseTo(0.01);
+  } finally {
+    almanac.dispose();
+  }
+});

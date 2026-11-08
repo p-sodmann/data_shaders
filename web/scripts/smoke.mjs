@@ -401,6 +401,94 @@ async function checkStationsPlate(browser) {
   return errors;
 }
 
+// A suspended tab returns twelve minutes later. Keep the range responses pending so
+// the current readouts must stay live while the missing archive is still being fetched.
+async function checkRecovery(browser) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const page = await context.newPage();
+  const errors = [], releases = [];
+  let skew = 0, hold = false, ranges = 0;
+  const serverNow = () => Date.now() / 1000 + skew;
+  page.on('console', (m) => m.type() === 'error' && errors.push(`console.error: ${m.text()}`));
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  const doc = {
+    version: 1,
+    stations: [{ id: 'api', name: 'API-01', source: { kind: 'prometheus', station: 'api' } }],
+    pages: [{ id: 'recovery', name: 'RECOVERY', panels: [
+      { id: 'tape', type: 'tape', station: 'api', x: 0, y: 0, w: 8, h: 8 },
+      { id: 'fleet', type: 'fleet', station: 'api', x: 8, y: 0, w: 4, h: 8 },
+    ] }],
+  };
+  await context.addInitScript((config) => localStorage.setItem('mars.config', JSON.stringify(config)), doc);
+  await context.route('**/prom/**', async (route) => {
+    const url = new URL(route.request().url()), q = url.searchParams.get('query') ?? '';
+    const path = url.pathname.replace(/^\/prom\/api\/v1\//, '');
+    const reply = (data) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'success', data }) });
+    if (path === 'query' && q === 'time()') return reply({ resultType: 'scalar', result: [serverNow(), String(serverNow())] });
+    if (path === 'query' && q.includes('__name__=~"mars:.+"')) {
+      const body = fixture('live.json');
+      for (const r of body.data.result) r.value[0] = serverNow();
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+    }
+    if (path !== 'query_range') return recordedProm(route);
+    const from = +url.searchParams.get('start'), to = +url.searchParams.get('end'), step = +url.searchParams.get('step');
+    if (step !== 1) return reply({ resultType: 'matrix', result: [] });
+    ranges++;
+    const node = q.includes('node_');
+    const names = node ? ['node_up', 'node_load_ratio', 'node_latency_p50_ms'] : ['latency_p50_ms', 'throughput_rps', 'error_ratio', 'saturation_ratio'];
+    const result = names.map((name) => ({
+      metric: { __name__: `mars:${name}`, station: 'api', ...(node ? { instance: 'demo-api:8000' } : {}) },
+      values: Array.from({ length: Math.max(0, Math.floor(to - from + 1)) }, (_, i) => {
+        const t = from + i;
+        const v = { latency_p50_ms: 15 + Math.sin(t / 23) * 6, throughput_rps: 30, error_ratio: 0.001, saturation_ratio: 0.3, node_up: 1, node_load_ratio: 0.3, node_latency_p50_ms: 16 + Math.sin(t / 19) * 4 }[name];
+        return [t, String(v)];
+      }),
+    }));
+    if (hold) return new Promise((resolve) => releases.push(async () => { await reply({ resultType: 'matrix', result }); resolve(); }));
+    return reply({ resultType: 'matrix', result });
+  });
+  try {
+    await page.goto(BASE);
+    await page.waitForFunction(() => window.__mars?.stations()[0]?.getStatus().phase === 'live');
+    await page.waitForTimeout(500);
+    const before = await page.evaluate(() => window.__mars.stations()[0].store.latest.t);
+    const oldRanges = ranges;
+    skew += 720;
+    hold = true;
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForFunction((old) => window.__mars.stations()[0].store.latest.t > old + 700, before);
+    // The two range queries must stay single-flight even with repeated focus events.
+    await page.waitForTimeout(150);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    if (ranges - oldRanges !== 2) errors.push(`expected two recovery queries, got ${ranges - oldRanges}`);
+    const missing = await page.evaluate((t) => window.__mars.stations()[0].store.latencyAt(t + 30), before);
+    if (missing !== -1) errors.push('the suspension did not leave a gap before recovery');
+    hold = false;
+    await Promise.all(releases.splice(0).map((release) => release()));
+    await page.waitForSelector('.recovery-notice');
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: join(SNAPSHOTS, 'recovery-during.png') });
+    const restored = await page.evaluate((t) => {
+      const s = window.__mars.stations()[0].store;
+      return { value: s.latencyAt(t + 30), node: s.hostLatAt(s.latest.t - 20, 0), count: s.recovery?.count, latency: s.latest.latency };
+    }, before);
+    if (!(restored.value > 0 && restored.node > 0 && restored.count > 700)) errors.push(`archive not restored: ${JSON.stringify(restored)}`);
+    if (Math.abs(restored.latency - 18.02) > 0.1) errors.push(`live readout rewound to ${restored.latency}`);
+    await page.waitForTimeout(2400);
+    await page.screenshot({ path: join(SNAPSHOTS, 'recovery-complete.png') });
+    // Reduced motion restores the same data immediately without the moving beam.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    skew += 80;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForFunction(() => window.__mars.stations()[0].store.recovery?.duration === 0);
+  } finally {
+    hold = false;
+    await Promise.all(releases.splice(0).map((release) => release()));
+    await context.close();
+  }
+  return errors;
+}
+
 async function main() {
   build();
   mkdirSync(SNAPSHOTS, { recursive: true });
@@ -412,6 +500,12 @@ async function main() {
   let failed = 0;
   let checks = 0;
   try {
+    if (process.env.SMOKE_ONLY_RECOVERY) {
+      const errors = await checkRecovery(browser);
+      if (errors.length) throw new Error(errors.join('\n'));
+      console.log('✓ archive recovery, live polling, focus deduplication and reduced motion');
+      return;
+    }
     const runs = [
       ...Object.entries(PAGES).map(([n, expected]) => ({ label: `page ${n}`, query: `?page=${n}`, expected, shot: `page-${n}.png` })),
       ...Object.entries(TWO_PAGES).map(([n, expected]) => ({
@@ -452,6 +546,15 @@ async function main() {
       for (const e of service) console.log(`    ${e}`);
     } else {
       console.log('✓ service panel  page added, radar placed, moved, rebound, saved, reloaded (copy wins, undo kept), reverted, 12 pages; locked E ignored  → snapshots/service-*.png');
+    }
+    checks++;
+    const recovery = await checkRecovery(browser);
+    if (recovery.length) {
+      failed++;
+      console.log('✗ archive recovery');
+      for (const e of recovery) console.log(`    ${e}`);
+    } else {
+      console.log('✓ archive recovery  12-minute suspension filled; live readouts retained; reduced motion respected → snapshots/recovery-*.png');
     }
     checks++;
     const plate = await checkStationsPlate(browser);

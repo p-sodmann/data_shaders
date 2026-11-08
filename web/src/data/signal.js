@@ -229,6 +229,7 @@ export function createSignal(store, profile) {
   const fall = { rows: new Uint8Array(SHORT.bins * SHORT.rows), lastRow: -1, liveT: -1, version: 0 };
   const curve = { med: new Float32Array(CURVE_BINS).fill(NaN), hi: new Float32Array(CURVE_BINS).fill(NaN), knee: null, t: -1, cloud: [] };
   const corr = { now: null, base: null, t: -1, tBase: -1 };
+  let historyVersion = store.historyVersion ?? 0;
   let wallLong = -Infinity, wallCorr = -Infinity, wallRhythm = -Infinity, tRhythm = -Infinity;
 
   function updateSpectrum(now) {
@@ -561,6 +562,12 @@ export function createSignal(store, profile) {
     shortP,
     // called by every page-4 instrument each frame; cheap when nothing is due
     update(wall) {
+      if (historyVersion !== (store.historyVersion ?? 0)) {
+        historyVersion = store.historyVersion ?? 0;
+        spec.t = curve.t = corr.t = corr.tBase = fall.lastRow = fall.liveT = -1;
+        tRhythm = -Infinity;
+        spec.hold.fill(0);
+      }
       const now = store.latest?.t;
       if (now == null) return;
       if (spec.t < 0 || (now - spec.t >= 5 && wall - wallLong >= 1000)) {

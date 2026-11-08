@@ -1,3 +1,4 @@
+import { recoveryFrame, revealed } from '../data/recovery.js';
 import { PH, STATE_COLORS } from '../gl/palette.js';
 import { camera, hash } from './space.js';
 
@@ -37,6 +38,7 @@ export function createSlices(station, options = {}) {
         cy: (tlY - 8) * 0.48,
         scale: Math.min(scaleX * 0.62, tlY * 1.05) * 2.6,
       });
+      const recovery = recoveryFrame(store.recovery, f.now);
       const live = STATE_INDEX[store.state] ?? 0;
 
       SLICES.forEach(([ago, label], k) => {
@@ -53,7 +55,7 @@ export function createSlices(station, options = {}) {
         const T = now - ago;
         const pts = [];
         for (let i = 0; i < n; i++) {
-          const ms = store.hostLatAt(T, i);
+          const ms = revealed(T, recovery) ? store.hostLatAt(T, i) : -1;
           const a = (i / n) * TAU + t * 0.04;
           // full radius at two thirds of the station's scale (40 ms at the default 60)
           const r = ms < 0 ? 0.14 : 0.2 + 0.4 * Math.min(1.2, ms / (thresh.max * (2 / 3)));

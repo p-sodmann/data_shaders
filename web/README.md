@@ -9,8 +9,9 @@ nvm install      # uses the repository root .nvmrc (Node 26.13.0)
 npm install
 npm run dev      # then open the printed URL, press F for fullscreen
 npm test         # unit tests (vitest): config schema, migrations, load order, station manager
-npm run smoke    # build, open every page headless (default doc, two-station example, old URL),
+npm run smoke    # build, open every page headless; test archive recovery after suspension,
                  # fail on errors, write snapshots/*.png
+# SMOKE_SKIP_BUILD=1 SMOKE_ONLY_RECOVERY=1 npm run smoke  # tune the recovery animation
 ```
 
 This is the `web/` part of the MARS monorepo; see the [root README](../README.md) for the
@@ -271,6 +272,16 @@ When a Prometheus station starts ([src/data/prometheus/](src/data/prometheus/)):
 4. **Almanac.** Minutes the browser doesn't hold yet (up to 30 days) are read from Prometheus
    (`avg_over_time(…[1m])`, 60 s steps; the error rate from `mars:error_ratio:rate1m`, which is
    weighted by traffic like the live minutes). IndexedDB is only a cache.
+
+When the tab regains focus or becomes visible after browser throttling or sleep, it polls
+immediately and fetches the missed interval from Prometheus. Recovery also happens after a
+network interruption, with retries if history is temporarily unavailable. The four-hour tape,
+last ten minutes of node history, Signal analysis, and completed Almanac minutes are restored
+without replaying past alarms through the current readouts. Real missing backend data remains
+a gap. A bright phosphor write head sweeps through the recovered tape and fleet traces, with
+an **ARCHIVE SYNC** notice; the sweep is disabled when reduced motion is preferred. Simulation
+also catches up and animates. A polling JSON feed has no history API, so it resumes live data
+without fabricating past samples.
 
 Mapping (ADR-0003): a node is **offline** when `node_up` is 0 or missing. Otherwise it is warn
 or crit when its load passes the station's `thresh.satWarn` / `satCrit`. If a second has no

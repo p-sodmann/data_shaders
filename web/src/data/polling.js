@@ -1,3 +1,4 @@
+import { onResume } from './resume.js';
 import { STALE_AFTER } from './telemetry.js';
 
 // Live adapter: polls a JSON endpoint once per interval.
@@ -66,6 +67,7 @@ function normalize(j, n, profile) {
 
 export function createPollingSource({ profile, url, hostCount = 32, interval = 1000 }) {
   let timer = null, watchdog = null, controller = null;
+  let offResume = null;
   let generation = 0;
   let lastSuccess = -Infinity;
   return {
@@ -103,10 +105,15 @@ export function createPollingSource({ profile, url, hostCount = 32, interval = 1
           if (token === generation) timer = setTimeout(poll, interval);
         }
       };
+      offResume = onResume(() => {
+        if (!controller) { clearTimeout(timer); poll(); }
+      });
       poll();
     },
     stop() {
       generation++;
+      offResume?.();
+      offResume = null;
       clearTimeout(timer);
       clearInterval(watchdog);
       controller?.abort();

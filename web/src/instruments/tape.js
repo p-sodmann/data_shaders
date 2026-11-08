@@ -1,3 +1,4 @@
+import { recoveryFrame } from '../data/recovery.js';
 import { ROWS, ROW_SECONDS } from '../config.js';
 
 // 01 TAPE ARCHIVE
@@ -24,6 +25,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const FRAG = `
 uniform sampler2D uRows;
+uniform vec4 uRecovery; // from, to and moving write head, relative to rowStart; glow
 uniform float uHead, uLast, uShift, uWarn, uCrit, uMax, uLimits;
 #define K ${ROWS}
 const float N = ${ROW_SECONDS}.;
@@ -58,7 +60,9 @@ void main(){
     float fade = live ? 1. : pow(clamp(1.-z/float(K), 0., 1.), 1.5);
     float uu = live ? min(u, uLast) : u;
     vec2 d = rowAt(uu, k);
-    bool has = d.r >= 0. && !(live && u > uHead);
+    float sampleT = -k*N+floor(uu*N);
+    bool recovering = uRecovery.w > 0. && sampleT >= uRecovery.x && sampleT <= uRecovery.y;
+    bool has = d.r >= 0. && !(live && u > uHead) && !(recovering && sampleT > uRecovery.z);
     float h = has ? H(d.r)*s : 0.;
     float ridge = base+h;
 
@@ -78,7 +82,11 @@ void main(){
       float age = (uHead-u)*N;
       amp *= 1.+1.8*exp(-age/5.);                        // fresh ink burns brighter
     }
-    col += c*I*amp*fade;
+    // Recovered ink is rewritten by a bright phosphor head, oldest to newest.
+    float beamWidth = max(1.5, (uRecovery.y-uRecovery.x)/160.);
+    float beam = recovering ? exp(-pow((sampleT-uRecovery.z)/beamWidth, 2.))*uRecovery.w : 0.;
+    col += c*I*(amp+beam*3.)*fade;
+    col += PH_OK*beam*.09*fade*exp(-abs(uv.y-ridge)*uRes.y/(24.*uDpr));
 
     // perspective dot grid at one-minute marks
     float um = floor(u*10.+.5)/10.;
@@ -153,7 +161,9 @@ export function createTape(station, options = {}) {
       }
       const head = store.rowStart === null ? 0 : clamp((store.now() - store.rowStart) / ROW_SECONDS, 0, 1);
       const p = clamp((f.now - store.rolloverWall) / ROLL_MS, 0, 1);
+      const recovery = recoveryFrame(store.recovery, f.now);
       return {
+        uRecovery: recovery ? [recovery.from - store.rowStart, recovery.to - store.rowStart, recovery.cursor - store.rowStart, recovery.glow] : [0, 0, 0, 0],
         uRows: tex.tex,
         uHead: head,
         uLast: Math.max(0, store.lastIdx) / ROW_SECONDS,
