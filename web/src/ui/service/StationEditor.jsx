@@ -138,6 +138,15 @@ export function StationEditor({ entry, station, onPatch, onClose }) {
 
       <Row label="Name">{entryOf('name', entry.name, '', (t) => apply('name', { name: t }), { maxLength: 24, className: '' })}</Row>
 
+      {prom && (
+        <Row label="Prometheus station">
+          {entryOf('source.station', entry.source.station, 'fleet',
+            (t) => apply('source.station', { source: { ...entry.source, station: t } }),
+            { className: 'plain' })}
+          <span className="engraved">Must match the push key’s station; the name above is a display label.</span>
+        </Row>
+      )}
+
       <div className="st-group">
         <span className="cap">Thresholds</span>
         <div className="st-fields">
