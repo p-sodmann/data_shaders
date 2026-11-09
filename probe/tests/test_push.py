@@ -53,11 +53,20 @@ def test_push(gateway):
     try:
         with TestClient(app) as c:
             c.get("/x")
-        n = len(pushes)
-        wait_for(lambda: len(pushes) > n)
+        # A push already in flight can contain a snapshot from before /x completed.
+        # Wait for the request's metrics and exemplar, not just another HTTP POST.
+        wait_for(
+            lambda: any(
+                'route="/x"' in body and '# {status="200"}' in body for _, _, body in pushes
+            )
+        )
     finally:
         probe.pusher.stop()
-    path, headers, body = pushes[-1]
+    path, headers, body = next(
+        push
+        for push in reversed(pushes)
+        if 'route="/x"' in push[2] and '# {status="200"}' in push[2]
+    )
     assert path == "/push/api-1"
     assert headers["Authorization"] == "Bearer mars_k3y"
     assert headers["Content-Type"].startswith("application/openmetrics-text")
