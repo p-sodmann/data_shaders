@@ -57,6 +57,9 @@ if the prod compose tag or this file don't follow it. The format follows
 
 ### Fixed
 
+- Error Budget panels scale their tank, graduations, and readouts to the glass size; history
+  coverage has its own row so it cannot overlap the burn rate or projection.
+
 - Gateway key rotation keeps one series per station/node; reserved push metrics and duplicate
   samples are rejected, and in-flight pushes cannot restore revoked clients.
 - Polling feeds time out, show stale data after an outage, and ignore responses after stopping.

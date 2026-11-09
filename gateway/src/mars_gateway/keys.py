@@ -102,6 +102,22 @@ class KeyStore:
             self._index()
         return key, token
 
+    def update_station(self, key_id: str, station: str) -> Key | None:
+        """Change a display key's station without rotating its token."""
+        if not STATION.match(station):
+            raise ValueError("station: lower case letters, digits and dashes, max 32")
+        with self._lock:
+            key = next((k for k in self._keys if k.id == key_id), None)
+            if key:
+                old = key.station
+                key.station = station
+                try:
+                    self._save()
+                except OSError:
+                    key.station = old
+                    raise
+            return key
+
     def revoke(self, key_id: str) -> Key | None:
         """Removes a key made on the display; None if there is none (env keys can't go)."""
         with self._lock:

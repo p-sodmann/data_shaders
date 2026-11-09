@@ -275,3 +275,55 @@ def test_http_push_revoked_while_its_body_is_parsed(server, keys, monkeypatch):
     assert not request.is_alive()
     assert result[0][0] == 401
     assert "node" not in call("GET", f"{server}/metrics")[1]
+
+
+def test_station_change_keeps_token_and_persists(keys):
+    key, token = keys.create("host", "fleet")
+    board = Board()
+    board.push(key, "host-1", AGENT, "text/plain")
+    assert board.update_station(keys, key.id, "fleet-01") is key
+    assert keys.check(token).station == "fleet-01"
+    assert KeyStore(keys.path).check(token).station == "fleet-01"
+    assert 'station="fleet"' not in scrape(board)
+    board.push(key, "host-1", AGENT, "text/plain")
+    assert 'station="fleet-01"' in scrape(board)
+    assert board.clients(key.id)[0]["live"]
+    assert board.update_station(keys, "env-1", "other") is None
+    with pytest.raises(ValueError):
+        board.update_station(keys, key.id, "Fleet")
+    assert keys.check(token).station == "fleet-01"
+
+
+def test_http_station_change(server, keys):
+    key, token = keys.create("host", "fleet")
+    url = f"{server}/api/keys/{key.id}"
+    headers = {"Content-Type": "application/json"}
+    assert call("PATCH", url, '{"station":"fleet-01"}', headers)[0] == 200
+    assert call("PATCH", url, '{"station":"Bad"}', headers)[0] == 400
+    assert call("PATCH", url, "[]", headers)[0] == 400
+    assert call("PATCH", url, "station=x")[0] == 415
+    assert call("PATCH", f"{server}/api/keys/env-1", '{"station":"x"}', headers)[0] == 404
+    assert (
+        call("POST", f"{server}/push/host-1", AGENT, {"Authorization": f"Bearer {token}"})[0] == 204
+    )
+    metrics = call("GET", f"{server}/metrics")[1]
+    assert 'station="fleet-01"' in metrics
+    assert 'station="fleet"' not in metrics
+
+
+def test_station_change_during_push(keys, monkeypatch):
+    from mars_gateway import board as module
+
+    key, _ = keys.create("host", "fleet")
+    board = Board()
+    original = module.parse
+
+    def parse_and_move(body, content_type):
+        families = original(body, content_type)
+        board.update_station(keys, key.id, "fleet-01")
+        return families
+
+    monkeypatch.setattr(module, "parse", parse_and_move)
+    board.push(key, "host-1", AGENT, "text/plain")
+    assert 'station="fleet"' not in scrape(board)
+    assert 'station="fleet-01"' in scrape(board)

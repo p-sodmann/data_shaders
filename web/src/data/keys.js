@@ -27,6 +27,7 @@ export function createKeysClient({ base = '/api/keys', fetch: f = globalThis.fet
   return {
     list: async () => (await call('GET')).keys,
     create: (name, station) => call('POST', '', { name, station }),
+    updateStation: (id, station) => call('PATCH', `/${encodeURIComponent(id)}`, { station }),
     revoke: (id) => call('DELETE', `/${encodeURIComponent(id)}`),
   };
 }

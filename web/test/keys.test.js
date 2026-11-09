@@ -29,6 +29,15 @@ describe('keys client', () => {
     expect(JSON.parse(calls[1].body)).toEqual({ name: 'web hosts', station: 'web' });
   });
 
+  it('changes a station without replacing the token', async () => {
+    const { f, calls } = fakeFetch([200, { key: { id: 'a1', station: 'fleet-01' } }]);
+    const keys = createKeysClient({ fetch: f });
+    expect((await keys.updateStation('a1', 'fleet-01')).key.station).toBe('fleet-01');
+    expect(calls[0].method).toBe('PATCH');
+    expect(calls[0].url).toBe('/api/keys/a1');
+    expect(JSON.parse(calls[0].body)).toEqual({ station: 'fleet-01' });
+  });
+
   it("throws the gateway's reason", async () => {
     const { f } = fakeFetch([400, { error: 'station: lower case' }], [502, {}]);
     const keys = createKeysClient({ fetch: f });

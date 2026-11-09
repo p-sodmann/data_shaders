@@ -20,7 +20,7 @@ from prometheus_client.metrics_core import Metric
 from prometheus_client.openmetrics.parser import text_string_to_metric_families as parse_om
 from prometheus_client.parser import text_string_to_metric_families as parse_text
 
-from .keys import Key
+from .keys import Key, KeyStore
 
 # Only the MARS families: a client can't fill Prometheus with arbitrary series.
 FAMILY_PREFIX = "mars_"
@@ -88,14 +88,25 @@ class Board:
 
     def push(self, key: Key, instance: str, body: str, content_type: str) -> int:
         """Replaces what `instance` pushed with `key`; returns the number of samples kept."""
-        families = relabel(parse(body, content_type), key.station, instance)
-        entry = Entry(key.station, key.id, families, self.clock(), time.time())
+        parsed = parse(body, content_type)
         with self._lock:
             if key.id in self._revoked:
                 raise PermissionError("revoked key")
+            families = relabel(parsed, key.station, instance)
+            entry = Entry(key.station, key.id, families, self.clock(), time.time())
             # The latest accepted push owns this station/node, including after key rotation.
             self._entries[(key.station, instance)] = entry
         return sum(len(f.samples) for f in families)
+
+    def update_station(self, keys: KeyStore, key_id: str, station: str) -> Key | None:
+        """Serialize reassignment with pushes, clearing the old station's readings."""
+        with self._lock:
+            key = keys.update_station(key_id, station)
+            if key:
+                for identity, entry in list(self._entries.items()):
+                    if entry.key_id == key_id and entry.station != station:
+                        del self._entries[identity]
+            return key
 
     def revoke(self, key_id: str) -> None:
         """A revoked key's clients read as down at once, not after `ttl`."""

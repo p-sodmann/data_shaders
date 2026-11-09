@@ -27,6 +27,7 @@ display's own address.
 |---|---|---|
 | `POST /push/<instance>` | `Authorization: Bearer <key>`, body in the text format or OpenMetrics | `204`; `401` unknown key; `400` bad body or instance name; `413` over 4 MiB |
 | `GET /metrics` | for Prometheus, over the compose network only | |
+| `PATCH /api/keys/<id>` | JSON `{"station":"fleet"}`; edits a display key without changing its token; next push uses the new station | |
 | `GET /api/keys` | the keys (never their tokens) and the clients pushing with each | |
 | `POST /api/keys` | `{"name": "web hosts", "station": "web"}`, `Content-Type: application/json` | `201` `{key, token}` |
 | `DELETE /api/keys/<id>` | revoke; its clients read as down at once | `204`; `404` for an unknown key or one from `MARS_PUSH_KEYS` |
@@ -58,3 +59,5 @@ printf 'mars_info{version="test"} 1\n' | curl -X POST --data-binary @- \
 cd gateway
 uv run pytest -q && uv run ruff check . && uv run ruff format --check .
 ```
+
+On **E → Keys**, edit the station beside an existing display key and press Enter or leave the field. The token stays valid, so clients need no changes. Cached readings under its old station are cleared; history already stored in Prometheus remains. Environment keys must be changed in `MARS_PUSH_KEYS`.

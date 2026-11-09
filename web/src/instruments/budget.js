@@ -10,6 +10,7 @@ export function createBudget(station, options = {}) {
   const { almanac } = station;
   const { slo } = station.profile;
   const bubbles = [];
+  let lastWidth = 0, lastHeight = 0;
   return {
     crt: { curve: 0.035, scan: 0.8, bloom: 1.05, decay: 0.85 },
     render(gl, _state, f, v) {
@@ -19,9 +20,17 @@ export function createBudget(station, options = {}) {
       const rem = Math.max(0, Math.min(1, a.remaining));
       const c = rem > 0.5 ? PH.ok : rem > 0.2 ? PH.warn : PH.crit;
 
-      // the tube
-      const tw = Math.min(70, W * 0.22), tx = 46, T = 22, B = H - 22;
+      // Fit the tank and its labels to the actual glass height. A shallow panel
+      // must not become a circle with five graduations crowded into its middle.
+      const pad = Math.max(8, Math.min(18, H * 0.08));
+      const T = pad, B = H - pad;
+      const tickPitch = Math.min(1.2, (B - T) / 55);
+      const tw = Math.min(70, W * 0.2, (B - T) * 0.44);
+      const tx = pad + v.textWidth('100', tickPitch) + 12;
       const r = tw / 2;
+      if (W !== lastWidth || H !== lastHeight) bubbles.length = 0;
+      lastWidth = W;
+      lastHeight = H;
       const outline = [];
       for (let i = 0; i <= 12; i++) {
         const q = Math.PI + (i / 12) * Math.PI;
@@ -33,22 +42,27 @@ export function createBudget(station, options = {}) {
       }
       v.poly(outline, PH.ok, 0.35, 0.55, true);
       // graduations
-      const yOf = (fr) => B - r * 0.4 - fr * (B - T - r * 1.4);
+      const yOf = (fr) => B - 6 - fr * (B - T - 12);
       for (const g of [0, 0.25, 0.5, 0.75, 1]) {
         const y = yOf(g);
         v.line(tx - 8, y, tx - 2, y, PH.ok, 0.45, 0.45);
         const s = `${g * 100}`;
-        v.text(tx - 12 - v.textWidth(s, 1.2), y - 4, s, PH.ok, 0.4, 1.2);
+        v.text(tx - 12 - v.textWidth(s, tickPitch), y - 3 * tickPitch, s, PH.ok, 0.4, tickPitch);
       }
       // the liquid: hatched fill and a moving meniscus
       const ly = yOf(rem);
-      for (let y = B - r * 0.4; y > ly; y -= 3) {
-        const inset = y > B - r ? r - Math.sqrt(Math.max(0, r * r - (y - (B - r)) ** 2)) : 0;
-        v.line(tx + 3 + inset, y, tx + tw - 3 - inset, y, c, 0.16, 0.5);
+      const insetAt = (y) => {
+        const dy = y < T + r ? y - (T + r) : y > B - r ? y - (B - r) : 0;
+        return dy ? r - Math.sqrt(Math.max(0, r * r - dy * dy)) : 0;
+      };
+      for (let y = B - 3; y > ly; y -= 3) {
+        const inset = insetAt(y) + 3;
+        if (inset < r) v.line(tx + inset, y, tx + tw - inset, y, c, 0.16, 0.5);
       }
       let prev = null;
+      const inset = Math.min(r - 1, insetAt(ly) + 3);
       for (let i = 0; i <= 16; i++) {
-        const x = tx + 3 + (i / 16) * (tw - 6);
+        const x = tx + inset + (i / 16) * (tw - 2 * inset);
         const y = ly + Math.sin(t * 1.7 + i * 0.7) * 1.2;
         if (prev) v.line(prev[0], prev[1], x, y, c, 0.95, 0.6);
         prev = [x, y];
@@ -65,7 +79,7 @@ export function createBudget(station, options = {}) {
       }
 
       // readout
-      const x0 = tx + tw + 22;
+      const x0 = tx + tw + Math.max(12, Math.min(22, W * 0.04));
       const pct = (n) => `${(n * 100).toFixed(n < 0.1 ? 1 : 0)}%`;
       const days = a.daysLeft;
       const proj = rem <= 0 ? 'EXHAUSTED' : days === Infinity || days > slo.days ? 'HOLDS AT THIS RATE' : `EMPTY IN ${days < 2 ? `${Math.round(days * 24)}H` : `${days.toFixed(0)}D`}`;
@@ -77,12 +91,18 @@ export function createBudget(station, options = {}) {
         [`BURN 6H ${a.burn6h === a.burn6h ? a.burn6h.toFixed(2) : '--'}X`, a.burn6h > 1 ? PH.warn : PH.ok, 0.7],
         [proj, projC, 0.9],
       ];
-      let y = T;
-      for (const [s, col, inten, pitch = 1.4] of lines) {
-        v.text(x0, y, s, col, inten, pitch);
-        y += pitch * 11 + 4;
+      if (a.coverage < 0.98) lines.push([`HISTORY ${Math.round(a.coverage * slo.days)}D OF ${slo.days}`, PH.ok, 0.35, 1.25]);
+      // Measure all lines together, including coverage, instead of pinning the
+      // history label over whichever readout happens to reach the bottom.
+      const gap = 4.5;
+      const fullHeight = lines.reduce((sum, line) => sum + 7 * (line[3] ?? 1.4), 0) + gap * (lines.length - 1);
+      const availableWidth = Math.max(1, W - pad - x0);
+      const scale = Math.min(1, (B - T) / fullHeight, ...lines.map(([text, , , pitch = 1.4]) => availableWidth / v.textWidth(text, pitch)));
+      let y = T + ((B - T) - fullHeight * scale) / 2;
+      for (const [text, col, inten, pitch = 1.4] of lines) {
+        v.text(x0, y, text, col, inten, pitch * scale);
+        y += (7 * pitch + gap) * scale;
       }
-      if (a.coverage < 0.98) v.text(x0, B - 12, `HISTORY ${Math.round(a.coverage * slo.days)}D OF ${slo.days}`, PH.ok, 0.35, 1.25);
     },
   };
 }

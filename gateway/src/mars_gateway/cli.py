@@ -5,6 +5,7 @@
   GET    /metrics            every client's latest push, for Prometheus (compose network only)
   GET    /api/keys           the keys and the clients pushing with each
   POST   /api/keys           {"name", "station"} → a new key, shown this once
+  PATCH  /api/keys/<id>      {"station"} → change a display key’s station
   DELETE /api/keys/<id>      revoke a key
   GET    /healthz
 
@@ -102,6 +103,26 @@ def handler(keys: KeyStore, board: Board) -> type[BaseHTTPRequestHandler]:
             except (ValueError, AttributeError) as e:
                 return self._error(400, str(e))
             self._json(201, {"key": {**key.public(), "clients": []}, "token": token})
+
+        def do_PATCH(self):  # noqa: N802
+            path = self._path()
+            if not path.startswith("/api/keys/"):
+                return self._error(404, "not found")
+            if not self.headers.get("Content-Type", "").startswith("application/json"):
+                return self._error(415, "send application/json")
+            body = self._body()
+            if body is None:
+                return
+            try:
+                req = json.loads(body)
+                key = board.update_station(
+                    keys, path[len("/api/keys/") :], str(req.get("station", ""))
+                )
+            except (ValueError, AttributeError) as e:
+                return self._error(400, str(e))
+            if key is None:
+                return self._error(404, "no such key, or one from MARS_PUSH_KEYS")
+            self._json(200, {"key": {**key.public(), "clients": board.clients(key.id)}})
 
         def do_DELETE(self):  # noqa: N802
             path = self._path()

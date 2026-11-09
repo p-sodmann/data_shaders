@@ -91,6 +91,20 @@ export function KeysPlate({ doc }) {
     }
   }
 
+  async function changeStation(key, station) {
+    if (station === key.station) return;
+    const why = keyProblem(key.name, station);
+    if (why) return setProblem(why);
+    try {
+      const result = await client.updateStation(key.id, station);
+      setMade((m) => m?.key.id === key.id ? { ...m, key: result.key } : m);
+      setProblem(null);
+      refresh();
+    } catch (e) {
+      setProblem(e.message);
+    }
+  }
+
   async function copyOut(what, text) {
     if (await copy(text)) setCopied(what);
   }
@@ -130,7 +144,12 @@ export function KeysPlate({ doc }) {
               <div className="st-row" role="row" data-key={k.id}>
                 <i className={`lamp small ${live.length ? 'NOMINAL' : k.clients.length ? 'DEGRADED' : 'STALE'}`} />
                 <span className="st-name kp-name">{k.name}</span>
-                <span className="st-src">{k.station}</span>
+                <span className="st-src">
+                  {k.source === 'env' ? k.station : (
+                    <Entry name={`station-${k.id}`} value={k.station} className="plain" maxLength={32}
+                      onCommit={(station) => changeStation(k, station)} />
+                  )}
+                </span>
                 <span className="num">
                   {live.length}/{k.clients.length}
                 </span>
@@ -213,7 +232,7 @@ export function KeysPlate({ doc }) {
           </Key>
         </div>
         <span className="engraved kp-hint">
-          The key decides the station · a new station appears under Stations · Available once it pushes
+          Edit a key’s station above · clients keep the same key · a new station appears under Stations · Available once it pushes
         </span>
       </div>
     </section>
